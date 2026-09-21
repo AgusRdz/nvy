@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/AgusRdz/nvy/internal/platform"
 	"github.com/AgusRdz/nvy/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -51,16 +52,27 @@ func printGlobalList() error {
 		return fmt.Errorf("nvy: %w", err)
 	}
 
-	if len(gs) == 0 {
+	external, extErr := platform.Get().ExternalVars()
+	if extErr == nil {
+		for k := range gs {
+			delete(external, k)
+		}
+	}
+
+	if len(gs) == 0 && len(external) == 0 {
 		fmt.Println("global: (empty)")
+		if extErr != nil {
+			fmt.Printf("  (external vars unavailable: %v)\n", extErr)
+		}
 		return nil
 	}
 
-	keys := sortedKeys(gs)
 	fmt.Println("GLOBAL")
+
+	keys := sortedKeys(gs)
 	for _, k := range keys {
 		entry := gs[k]
-		line := fmt.Sprintf("  %-30s", k)
+		line := fmt.Sprintf("  nvy  %-30s", k)
 		line += fmt.Sprintf("  updated %s", entry.UpdatedAt.Local().Format("2006-01-02"))
 		if entry.ExpiresAt != nil {
 			days := int(time.Until(*entry.ExpiresAt).Hours() / 24)
@@ -78,7 +90,36 @@ func printGlobalList() error {
 		}
 		fmt.Println(line)
 	}
+
+	if extErr != nil {
+		fmt.Printf("  (external vars unavailable: %v)\n", extErr)
+		return nil
+	}
+
+	extKeys := make([]string, 0, len(external))
+	for k := range external {
+		extKeys = append(extKeys, k)
+	}
+	sort.Strings(extKeys)
+	for _, k := range extKeys {
+		fmt.Printf("  ext  %-30s  %s  (external, read-only)\n", k, maskValue(external[k]))
+	}
+
 	return nil
+}
+
+// maskValue previews an external value without exposing the secret: up to the
+// first 4 runes, then a fixed mask that reveals neither the tail nor the length.
+func maskValue(v string) string {
+	r := []rune(v)
+	if len(r) == 0 {
+		return "••••"
+	}
+	n := 4
+	if len(r) < n {
+		n = len(r)
+	}
+	return string(r[:n]) + "••••"
 }
 
 func printLocalList() error {

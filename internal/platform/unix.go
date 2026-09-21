@@ -24,6 +24,53 @@ func (p *unixPlatform) ApplyGlobalVar(key, value string) error { return nil }
 // RemoveGlobalVar is a no-op on Unix — the shell hook reads global.json.
 func (p *unixPlatform) RemoveGlobalVar(key string) error { return nil }
 
+// externalVarsDenylist holds noise vars to exclude from ExternalVars: shell/session
+// plumbing that isn't a meaningful user-set env var. Tunable.
+var externalVarsDenylist = map[string]bool{
+	"PATH": true, "HOME": true, "PWD": true, "OLDPWD": true, "SHELL": true,
+	"SHLVL": true, "TERM": true, "TMPDIR": true, "TMP": true, "TEMP": true,
+	"USER": true, "LOGNAME": true, "HOSTNAME": true, "LANG": true, "LANGUAGE": true,
+	"DISPLAY": true, "COLORTERM": true, "PS1": true, "_": true,
+}
+
+// externalVarsDenylistPrefixes holds name prefixes to exclude from ExternalVars.
+var externalVarsDenylistPrefixes = []string{
+	"LC_", "SSH_", "XDG_", "DBUS_", "GPG_", "XAUTH", "GNOME_", "KDE_",
+}
+
+// filterExternalUnix splits an os.Environ()-shaped slice into a map, excluding
+// the noise denylist. Pure so it's testable without touching the real environment.
+func filterExternalUnix(environ []string) map[string]string {
+	vars := make(map[string]string, len(environ))
+	for _, kv := range environ {
+		idx := strings.Index(kv, "=")
+		if idx <= 0 {
+			continue
+		}
+		key := kv[:idx]
+		if externalVarsDenylist[key] {
+			continue
+		}
+		denied := false
+		for _, prefix := range externalVarsDenylistPrefixes {
+			if strings.HasPrefix(key, prefix) {
+				denied = true
+				break
+			}
+		}
+		if denied {
+			continue
+		}
+		vars[key] = kv[idx+1:]
+	}
+	return vars
+}
+
+// ExternalVars reads os.Environ(), minus the noise denylist.
+func (p *unixPlatform) ExternalVars() (map[string]string, error) {
+	return filterExternalUnix(os.Environ()), nil
+}
+
 func (p *unixPlatform) GetPath() ([]string, error) {
 	val := os.Getenv("PATH")
 	var entries []string

@@ -40,6 +40,35 @@ func (p *windowsPlatform) RemoveGlobalVar(key string) error {
 	return err
 }
 
+// ExternalVars enumerates every value under HKCU\Environment except Path,
+// which the path command owns. A value may be REG_SZ or REG_EXPAND_SZ;
+// GetStringValue handles both. Names of any other type are skipped.
+func (p *windowsPlatform) ExternalVars() (map[string]string, error) {
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.QUERY_VALUE)
+	if err != nil {
+		return nil, fmt.Errorf("open registry: %w", err)
+	}
+	defer k.Close()
+
+	names, err := k.ReadValueNames(-1)
+	if err != nil {
+		return nil, fmt.Errorf("read registry value names: %w", err)
+	}
+
+	vars := make(map[string]string, len(names))
+	for _, name := range names {
+		if strings.EqualFold(name, "Path") {
+			continue
+		}
+		val, _, err := k.GetStringValue(name)
+		if err != nil {
+			continue
+		}
+		vars[name] = val
+	}
+	return vars, nil
+}
+
 func (p *windowsPlatform) GetPath() ([]string, error) {
 	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.QUERY_VALUE)
 	if err != nil {

@@ -10,6 +10,11 @@ type Platform interface {
 	// RemoveGlobalVar removes the var from the OS-level user environment.
 	RemoveGlobalVar(key string) error
 
+	// ExternalVars returns the raw OS-level user environment view: every
+	// name/value nvy did not necessarily set. It does NOT subtract nvy-managed
+	// keys — callers must do that against global.json themselves.
+	ExternalVars() (map[string]string, error)
+
 	// Phase 2+
 	AddToPath(entry string) error
 	RemoveFromPath(entry string) error

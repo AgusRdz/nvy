@@ -30,4 +30,5 @@ func init() {
 	rootCmd.AddCommand(uiCmd)
 	rootCmd.AddCommand(checkCmd)
 	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(importCmd)
 }
