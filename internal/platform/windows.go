@@ -137,6 +137,7 @@ func (p *windowsPlatform) writePath(entries []string) error {
 }
 
 const nvyHookMarker = "# nvy hook — do not edit"
+const nvyHookEndMarker = "# nvy hook end"
 
 func (p *windowsPlatform) ShellHookScript() string {
 	return nvyHookMarker + `
@@ -154,7 +155,7 @@ function prompt {
     }
     _nvy_original_prompt
 }
-`
+` + nvyHookEndMarker + "\n"
 }
 
 func (p *windowsPlatform) ShellConfigPath() string {
@@ -178,6 +179,32 @@ func (p *windowsPlatform) RegisterBackgroundTask(binaryPath string) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("schtasks: %w — %s", err, string(out))
+	}
+	return nil
+}
+
+// BackgroundTaskInstalled reports whether the nvy-check scheduled task exists.
+func (p *windowsPlatform) BackgroundTaskInstalled() (bool, error) {
+	out, err := exec.Command("schtasks", "/Query", "/TN", "nvy-check").CombinedOutput()
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			// schtasks exits non-zero when the task doesn't exist — not an error.
+			return false, nil
+		}
+		return false, fmt.Errorf("schtasks query: %w — %s", err, string(out))
+	}
+	return true, nil
+}
+
+// RemoveBackgroundTask deletes the nvy-check scheduled task, if present.
+func (p *windowsPlatform) RemoveBackgroundTask() error {
+	out, err := exec.Command("schtasks", "/Delete", "/TN", "nvy-check", "/F").CombinedOutput()
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			// task didn't exist — nothing to remove.
+			return nil
+		}
+		return fmt.Errorf("schtasks delete: %w — %s", err, string(out))
 	}
 	return nil
 }

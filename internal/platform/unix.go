@@ -141,6 +141,7 @@ func (p *unixPlatform) RemoveFromPath(entry string) error {
 }
 
 const nvyHookMarker = "# nvy hook — do not edit"
+const nvyHookEndMarker = "# nvy hook end"
 
 func (p *unixPlatform) ShellHookScript() string {
 	return nvyHookMarker + `
@@ -153,7 +154,7 @@ _nvy_hook() {
 }
 cd() { builtin cd "$@" && _nvy_hook; }
 _nvy_hook
-`
+` + nvyHookEndMarker + "\n"
 }
 
 func (p *unixPlatform) ShellConfigPath() string {
@@ -236,6 +237,98 @@ func registerCron(binaryPath string) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("crontab: %w — %s", err, string(out))
+	}
+	return nil
+}
+
+// BackgroundTaskInstalled reports whether the daily nvy-check task is registered.
+func (p *unixPlatform) BackgroundTaskInstalled() (bool, error) {
+	if runtime.GOOS == "darwin" {
+		return launchdInstalled()
+	}
+	return cronInstalled()
+}
+
+func launchdInstalled() (bool, error) {
+	out, err := exec.Command("launchctl", "list").Output()
+	if err != nil {
+		return false, fmt.Errorf("launchctl list: %w", err)
+	}
+	return strings.Contains(string(out), "run.nvy.check"), nil
+}
+
+func cronInstalled() (bool, error) {
+	out, err := exec.Command("crontab", "-l").Output()
+	if err != nil {
+		// no crontab for this user (or crontab unavailable) — treat as not installed.
+		return false, nil
+	}
+	return strings.Contains(string(out), "# nvy-check"), nil
+}
+
+// RemoveBackgroundTask unregisters the daily nvy-check task, if present.
+func (p *unixPlatform) RemoveBackgroundTask() error {
+	if runtime.GOOS == "darwin" {
+		return removeLaunchd()
+	}
+	return removeCron()
+}
+
+func removeLaunchd() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "run.nvy.check.plist")
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	_ = exec.Command("launchctl", "unload", plistPath).Run()
+
+	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove plist: %w", err)
+	}
+	return nil
+}
+
+func removeCron() error {
+	out, err := exec.Command("crontab", "-l").Output()
+	if err != nil {
+		// no crontab for this user — nothing to remove.
+		return nil
+	}
+
+	var kept []string
+	found := false
+	for _, l := range strings.Split(string(out), "\n") {
+		if strings.Contains(l, "# nvy-check") {
+			found = true
+			continue
+		}
+		kept = append(kept, l)
+	}
+	if !found {
+		return nil
+	}
+
+	for len(kept) > 0 && kept[len(kept)-1] == "" {
+		kept = kept[:len(kept)-1]
+	}
+
+	if len(kept) == 0 {
+		if err := exec.Command("crontab", "-r").Run(); err != nil {
+			return nil // best-effort: crontab may already be empty
+		}
+		return nil
+	}
+
+	result := strings.Join(kept, "\n") + "\n"
+	cmd := exec.Command("crontab", "-")
+	cmd.Stdin = bytes.NewBufferString(result)
+	out2, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("crontab: %w — %s", err, string(out2))
 	}
 	return nil
 }

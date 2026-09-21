@@ -22,4 +22,12 @@ type Platform interface {
 	ShellHookScript() string
 	ShellConfigPath() string
 	RegisterBackgroundTask(binaryPath string) error
+
+	// BackgroundTaskInstalled reports whether the daily expiration-check
+	// background task is currently registered.
+	BackgroundTaskInstalled() (bool, error)
+
+	// RemoveBackgroundTask unregisters the daily expiration-check background
+	// task. It is a no-op (not an error) if the task isn't registered.
+	RemoveBackgroundTask() error
 }

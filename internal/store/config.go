@@ -15,7 +15,8 @@ func DefaultConfig() Config {
 	return Config{NotificationLeadDays: 7}
 }
 
-func configPath() (string, error) {
+// ConfigPath returns the path to ~/.nvy/config.json.
+func ConfigPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -25,7 +26,7 @@ func configPath() (string, error) {
 
 // LoadConfig reads ~/.nvy/config.json. Returns defaults if file doesn't exist.
 func LoadConfig() (Config, error) {
-	path, err := configPath()
+	path, err := ConfigPath()
 	if err != nil {
 		return DefaultConfig(), nil
 	}
@@ -48,7 +49,7 @@ func LoadConfig() (Config, error) {
 
 // SaveConfig writes cfg to ~/.nvy/config.json.
 func SaveConfig(cfg Config) error {
-	path, err := configPath()
+	path, err := ConfigPath()
 	if err != nil {
 		return err
 	}

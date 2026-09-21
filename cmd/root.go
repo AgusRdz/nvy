@@ -70,6 +70,9 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(autoUpdateCmd)
 	rootCmd.AddCommand(bgUpdateCmd)
+	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		runUpdateLifecycle(cmd)
 	}
