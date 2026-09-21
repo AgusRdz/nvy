@@ -53,40 +53,49 @@ Global vars appear on the next prompt; a project's `.env` loads when you enter i
 
 ## Install
 
-`nvy` ships signed binaries for Linux, macOS, and Windows (amd64 + arm64).
+`nvy` ships signed binaries for Linux, macOS, and Windows (amd64 + arm64). The installer downloads the right binary, verifies its SHA-256 checksum, installs the shell hook, and schedules the daily expiration check.
 
-**Download a release binary** from the [releases page](https://github.com/AgusRdz/nvy/releases), then verify and install (Linux example):
+**macOS / Linux:**
 
 ```bash
-gh attestation verify nvy-linux-amd64 --repo AgusRdz/nvy   # verify provenance (see Verification)
-chmod +x nvy-linux-amd64
-mv nvy-linux-amd64 ~/.local/bin/nvy
+curl -fsSL https://raw.githubusercontent.com/AgusRdz/nvy/main/install.sh | sh
 ```
+
+Pin a version or change the install directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AgusRdz/nvy/main/install.sh | NVY_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/AgusRdz/nvy/main/install.sh | NVY_INSTALL_DIR=/usr/local/bin sh
+```
+
+The binary goes to `~/.local/bin` by default; if that's not on your `PATH` the installer adds it to `~/.zshrc` or `~/.bashrc`. A piped installer runs in a child process and can't touch your running shell, so activate it once — `source ~/.zshrc` (or open a new shell). After that `nvy` syncs automatically on every prompt.
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/AgusRdz/nvy/main/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\Programs\nvy`, adds it to your user `PATH` (live in the current session via a `WM_SETTINGCHANGE` broadcast), and installs the prompt hook. Open a new shell — or run `. $PROFILE` — to activate the hook.
 
 **With Go:**
 
 ```bash
-go install github.com/AgusRdz/nvy@latest
+go install github.com/AgusRdz/nvy@latest   # then run: nvy init
 ```
 
 **From source (Docker — no local Go toolchain needed):**
 
 ```bash
 git clone https://github.com/AgusRdz/nvy && cd nvy
-make install       # builds for your platform and installs the binary
+make install       # builds for your platform and installs the binary; then: nvy init
 ```
 
-Then wire the shell hook (once):
+**Manual download** — grab a binary from the [releases page](https://github.com/AgusRdz/nvy/releases), verify it (see [Verification](#verification)), then `chmod +x` and move it onto your `PATH`.
 
-```bash
-nvy init
-```
+> An in-place `nvy update` (self-update with signature verification) is on the roadmap. For now, re-run the installer to upgrade.
 
-Restart your shell or `source` your profile once; after that, `nvy` keeps your environment in sync automatically on every prompt.
-
-> A one-line installer (`curl … | sh` / `irm … | iex`) with immediate activation, and an in-place `nvy update`, are on the roadmap.
-
-> **macOS note:** a manually downloaded binary may be quarantined on first run. Clear it with `xattr -d com.apple.quarantine ./nvy`.
+> **macOS note:** a manually downloaded binary may be quarantined on first run. Clear it with `xattr -d com.apple.quarantine ./nvy`. Installing via the script avoids this.
 
 ---
 

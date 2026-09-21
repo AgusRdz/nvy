@@ -1,0 +1,9 @@
+# Shell scripts must be LF — they are served raw and run via `curl | sh`.
+*.sh text eol=lf
+install.sh text eol=lf
+
+# Go sources canonical LF.
+*.go text eol=lf
+
+# PowerShell scripts CRLF (Windows-native).
+*.ps1 text eol=crlf
