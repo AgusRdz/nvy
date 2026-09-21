@@ -116,7 +116,7 @@ nvy remove API_URL                     # delete
 
 ```
 nvy init                       Install the shell hook + register the daily expiration check
-nvy set KEY=value [flags]      Set a variable
+nvy set KEY[=value] [flags]    Set a variable, or (bare KEY) stamp its expiry/note
 nvy get KEY [--global|--local] Print a variable's value
 nvy remove KEY [scope]         Delete a variable
 nvy list [--global|--local]    List variables (managed + external, expiry-aware)
@@ -124,10 +124,15 @@ nvy import KEY... | --all      Adopt external OS vars into nvy's global store
 nvy path add|remove|list       Manage individual PATH entries
 nvy check                      Scan for expiring vars and notify (run by the scheduler)
 nvy ui                         Terminal UI
+nvy config [set|edit]          Show or change nvy settings
+nvy doctor                     Diagnose the install (hook, task, PATH, store, .gitignore)
+nvy update                     Self-update to the latest signed release
+nvy auto-update on|off         Toggle background auto-updates (off by default)
+nvy uninstall [--keep-data]    Remove the hook, background task, data, and binary
 nvy version                    Print the version
 ```
 
-`set` flags: `--global` (default) / `--local`, `--expires YYYY-MM-DD`, `--note TEXT`.
+`set` flags: `--global` (default) / `--local`, `--expires YYYY-MM-DD` (or `none` to clear), `--note TEXT`. Pass a **bare `KEY`** with `--expires`/`--note` (no `=value`) to stamp metadata on an existing or external var without retyping its value.
 
 ---
 
@@ -145,6 +150,15 @@ nvy set AWS_SESSION_TOKEN=... --global --expires 2026-10-01 --note "prod sso"
 GLOBAL
   nvy  AWS_SESSION_TOKEN               updated 2026-09-21  ⚠ expires in 3 days  [prod sso]
 ```
+
+Add or change an expiry on a variable you already have — including an external one — without retyping its value:
+
+```bash
+nvy set API_TOKEN --global --expires 2026-12-31   # adopts external / updates managed; value untouched
+nvy set API_TOKEN --global --expires none         # clear it
+```
+
+In `nvy ui`, press `[x]` on a variable to set or clear its expiry (external vars are imported first).
 
 ---
 
