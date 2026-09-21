@@ -135,6 +135,12 @@ func Run() error {
 
 		case "i":
 			u.cmdImport()
+
+		case "x":
+			u.restore()
+			u.cmdExpiry()
+			u.reenter()
+			enableVTInput()
 		}
 	}
 	return nil
@@ -156,7 +162,7 @@ func (u *ui) render() {
 	if u.msg != "" {
 		sb.WriteString("  " + u.msg + "\n")
 	}
-	sb.WriteString(dim("  [←→] section  [↑↓] navigate  [n] new  [e] edit  [d] delete  [i] import  [q] quit") + "\n")
+	sb.WriteString(dim("  [←→] section  [↑↓] navigate  [n] new  [e] edit  [d] delete  [i] import  [x] expiry  [q] quit") + "\n")
 
 	fmt.Print(sb.String())
 }
@@ -469,6 +475,100 @@ func (u *ui) cmdImport() {
 	_ = u.reload()
 	u.clampCursor()
 	u.msg = "imported " + r.key
+}
+
+// cmdExpiry sets or clears the expiry on the selected global or local var.
+// An external global var is first adopted into the managed store (same as
+// cmdImport) so it can carry metadata. Not applicable to the PATH section.
+func (u *ui) cmdExpiry() {
+	switch u.section {
+	case 0:
+		if u.cursor >= len(u.globals) {
+			return
+		}
+		r := u.globals[u.cursor]
+		if r.external {
+			u.cmdImport()
+			for i, g := range u.globals {
+				if g.key == r.key {
+					u.cursor = i
+					r = g
+					break
+				}
+			}
+		}
+
+		clearScreen()
+		fmt.Print(cyan("Expires (YYYY-MM-DD, blank to clear): "))
+		expiresAt, ok := parseExpiryInput(readLine())
+		if !ok {
+			u.msg = red("error: invalid date (YYYY-MM-DD)")
+			return
+		}
+
+		gs, err := store.LoadGlobal()
+		if err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+		entry := gs[r.key]
+		entry.ExpiresAt = expiresAt
+		entry.UpdatedAt = time.Now().UTC()
+		gs[r.key] = entry
+		if err := store.SaveGlobal(gs); err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+
+	case 1:
+		if u.cursor >= len(u.locals) {
+			return
+		}
+		r := u.locals[u.cursor]
+
+		clearScreen()
+		fmt.Print(cyan("Expires (YYYY-MM-DD, blank to clear): "))
+		expiresAt, ok := parseExpiryInput(readLine())
+		if !ok {
+			u.msg = red("error: invalid date (YYYY-MM-DD)")
+			return
+		}
+
+		meta, err := store.LoadLocalMeta(u.dir)
+		if err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+		m := meta[r.key]
+		m.ExpiresAt = expiresAt
+		m.UpdatedAt = time.Now().UTC()
+		meta[r.key] = m
+		if err := store.SaveLocalMeta(u.dir, meta); err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+
+	case 2:
+		u.msg = dim("expiry not applicable to PATH")
+		return
+	}
+
+	_ = u.reload()
+	u.msg = "updated expiry"
+}
+
+// parseExpiryInput parses the expiry prompt's raw input: blank clears the
+// expiry, a valid YYYY-MM-DD date sets it. ok is false for anything else.
+func parseExpiryInput(s string) (expiresAt *time.Time, ok bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, true
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil, false
+	}
+	return &t, true
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
