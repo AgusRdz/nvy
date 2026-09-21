@@ -37,6 +37,7 @@ type varRow struct {
 	value     string
 	expiresAt *time.Time
 	note      string
+	external  bool // set outside nvy (OS/registry); read-only until imported
 }
 
 type ui struct {
@@ -125,6 +126,9 @@ func Run() error {
 			u.cmdDelete()
 			u.reenter()
 			enableVTInput()
+
+		case "i":
+			u.cmdImport()
 		}
 	}
 	return nil
@@ -146,7 +150,7 @@ func (u *ui) render() {
 	if u.msg != "" {
 		sb.WriteString("  " + u.msg + "\n")
 	}
-	sb.WriteString(dim("  [←→] section  [↑↓] navigate  [n] new  [e] edit  [d] delete  [q] quit") + "\n")
+	sb.WriteString(dim("  [←→] section  [↑↓] navigate  [n] new  [e] edit  [d] delete  [i] import  [q] quit") + "\n")
 
 	fmt.Print(sb.String())
 }
@@ -214,6 +218,14 @@ func (u *ui) writePathSection(sb *strings.Builder) {
 func (u *ui) renderGlobalRows() []string {
 	rows := make([]string, len(u.globals))
 	for i, r := range u.globals {
+		if r.external {
+			rows[i] = fmt.Sprintf("%-24s  %s  %s",
+				bold(r.key),
+				dim(maskValue(r.value)),
+				dim("(external, read-only)"),
+			)
+			continue
+		}
 		rows[i] = fmt.Sprintf("%-24s  %s  %s",
 			bold(r.key),
 			dim(truncate(r.value, 18)),
@@ -221,6 +233,20 @@ func (u *ui) renderGlobalRows() []string {
 		)
 	}
 	return rows
+}
+
+// maskValue previews an external value without exposing the secret: up to the
+// first 4 runes, then a fixed mask that reveals neither the tail nor the length.
+func maskValue(v string) string {
+	r := []rune(v)
+	if len(r) == 0 {
+		return "••••"
+	}
+	n := 4
+	if len(r) < n {
+		n = len(r)
+	}
+	return string(r[:n]) + "••••"
 }
 
 func (u *ui) renderLocalRows() []string {
@@ -299,6 +325,10 @@ func (u *ui) cmdEdit() {
 			return
 		}
 		r := u.globals[u.cursor]
+		if r.external {
+			u.msg = dim("external var — read-only; press [i] to import it")
+			return
+		}
 		clearScreen()
 		fmt.Printf(cyan("Edit ")+bold(r.key)+" "+dim("(current: %s)")+"\nNew value: ", r.value)
 		value := readLine()
@@ -363,6 +393,10 @@ func (u *ui) cmdDelete() {
 		if u.cursor >= len(u.globals) {
 			return
 		}
+		if u.globals[u.cursor].external {
+			u.msg = dim("external var — read-only; press [i] to import it")
+			return
+		}
 		key = u.globals[u.cursor].key
 	case 1:
 		if u.cursor >= len(u.locals) {
@@ -404,6 +438,33 @@ func (u *ui) cmdDelete() {
 	u.msg = ""
 }
 
+// cmdImport adopts the selected external global var into nvy's store so it can
+// carry metadata and be managed. The value already exists in the OS, so this
+// only records it in global.json (no ApplyGlobalVar), mirroring `nvy import`.
+func (u *ui) cmdImport() {
+	if u.section != 0 || u.cursor >= len(u.globals) {
+		return
+	}
+	r := u.globals[u.cursor]
+	if !r.external {
+		u.msg = dim("not an external var — nothing to import")
+		return
+	}
+	gs, err := store.LoadGlobal()
+	if err != nil {
+		u.msg = red("error: " + err.Error())
+		return
+	}
+	gs[r.key] = store.GlobalEntry{Value: r.value, UpdatedAt: time.Now().UTC()}
+	if err := store.SaveGlobal(gs); err != nil {
+		u.msg = red("error: " + err.Error())
+		return
+	}
+	_ = u.reload()
+	u.clampCursor()
+	u.msg = "imported " + r.key
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func (u *ui) reload() error {
@@ -412,10 +473,26 @@ func (u *ui) reload() error {
 		return err
 	}
 	u.globals = make([]varRow, 0, len(gs))
+	managed := make(map[string]bool, len(gs))
 	for k, e := range gs {
+		managed[k] = true
 		u.globals = append(u.globals, varRow{key: k, value: e.Value, expiresAt: e.ExpiresAt, note: e.Note})
 	}
 	sortRows(u.globals)
+
+	// Reflect OS-level user vars nvy did not set (read-only), excluding any
+	// key already managed. Mirrors `nvy list`. A read error is non-fatal.
+	if ext, extErr := platform.Get().ExternalVars(); extErr == nil {
+		extRows := make([]varRow, 0, len(ext))
+		for k, v := range ext {
+			if managed[k] {
+				continue
+			}
+			extRows = append(extRows, varRow{key: k, value: v, external: true})
+		}
+		sortRows(extRows)
+		u.globals = append(u.globals, extRows...)
+	}
 
 	env, err := store.LoadEnv(u.dir)
 	if err != nil {
