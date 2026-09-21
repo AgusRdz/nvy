@@ -377,7 +377,7 @@ func (u *ui) cmdDelete() {
 	}
 
 	clearScreen()
-	fmt.Printf(cyan("Delete ")+bold(key)+"? [y/N] ")
+	fmt.Print(cyan("Delete ") + bold(key) + "? [y/N] ")
 	answer := readLine()
 	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
 		return

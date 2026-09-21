@@ -29,4 +29,5 @@ func init() {
 	rootCmd.AddCommand(pathCmd)
 	rootCmd.AddCommand(uiCmd)
 	rootCmd.AddCommand(checkCmd)
+	rootCmd.AddCommand(exportCmd)
 }

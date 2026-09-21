@@ -111,19 +111,20 @@ const nvyHookMarker = "# nvy hook — do not edit"
 
 func (p *windowsPlatform) ShellHookScript() string {
 	return nvyHookMarker + `
-function _nvy_hook {
-    $nvyFile = Join-Path (Get-Location) ".env"
-    if (Test-Path $nvyFile) {
-        Get-Content $nvyFile | ForEach-Object {
-            if ($_ -match "^\s*([^#][^=]+)=(.*)$") {
-                [System.Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim(), "Process")
-            }
-        }
+if (-not (Test-Path Function:\_nvy_original_prompt)) {
+    if (Test-Path Function:\prompt) {
+        Copy-Item Function:\prompt Function:\_nvy_original_prompt
+    } else {
+        function _nvy_original_prompt { "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) " }
     }
 }
-function Set-LocationWithHook { Set-Location @args; _nvy_hook }
-Set-Alias -Name cd -Value Set-LocationWithHook -Force
-_nvy_hook
+function prompt {
+    $nvyExports = & nvy export powershell 2>$null | Out-String
+    if ($nvyExports.Trim().Length -gt 0) {
+        Invoke-Expression $nvyExports
+    }
+    _nvy_original_prompt
+}
 `
 }
 
