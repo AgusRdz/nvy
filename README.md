@@ -93,7 +93,7 @@ make install       # builds for your platform and installs the binary; then: nvy
 
 **Manual download** — grab a binary from the [releases page](https://github.com/AgusRdz/nvy/releases), verify it (see [Verification](#verification)), then `chmod +x` and move it onto your `PATH`.
 
-> An in-place `nvy update` (self-update with signature verification) is on the roadmap. For now, re-run the installer to upgrade.
+> Run `nvy update` to self-update in place — it fetches the latest release, verifies its signed checksum, and swaps the running binary. `nvy auto-update on` makes nvy check and stage updates automatically in the background (applied on your next command); `nvy auto-update off` (the default) just prints a hint on your next command when an update is available.
 
 > **macOS note:** a manually downloaded binary may be quarantined on first run. Clear it with `xattr -d com.apple.quarantine ./nvy`. Installing via the script avoids this.
 
