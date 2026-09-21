@@ -78,6 +78,12 @@ func Run() error {
 	// re-enable VT input after MakeRaw (Windows clears it)
 	enableVTInput()
 
+	// Run in the alternate screen buffer so the shell's screen and cursor are
+	// restored exactly on exit — otherwise the last frame lingers and the shell
+	// prompt redraws over it, leaving line-editing/navigation janky.
+	fmt.Print("\033[?1049h\033[?25h")
+	defer fmt.Print("\033[?1049l\033[?25h")
+
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
