@@ -64,7 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/AgusRdz/nvy/main/install.sh | sh
 Pin a version or change the install directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AgusRdz/nvy/main/install.sh | NVY_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/AgusRdz/nvy/main/install.sh | NVY_VERSION=v0.1.6 sh
 curl -fsSL https://raw.githubusercontent.com/AgusRdz/nvy/main/install.sh | NVY_INSTALL_DIR=/usr/local/bin sh
 ```
 
@@ -199,7 +199,7 @@ nvy path remove /some/old/dir
 nvy path list
 ```
 
-On Windows this edits the user `PATH` in the registry (preserving `REG_EXPAND_SZ`); on macOS/Linux it goes through the shell hook.
+On Windows this edits the user `PATH` in the registry (preserving `REG_EXPAND_SZ`); on macOS/Linux it adds or removes a tagged `export PATH="$PATH:…"  # nvy-path` line in your shell config (`~/.zshrc` / `~/.bashrc`) — reload the shell or open a new one to pick it up.
 
 ---
 
