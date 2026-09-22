@@ -1169,6 +1169,12 @@ func readKey(r *bufio.Reader) (string, error) {
 		return "", err
 	}
 	if b == 0x1b {
+		// A lone Esc has no buffered follow-bytes; an arrow/nav sequence
+		// (Esc [ …) arrives in the same read, so its bytes are already
+		// buffered. This avoids blocking on a single Esc waiting for more.
+		if r.Buffered() == 0 {
+			return "esc", nil
+		}
 		b2, err := r.ReadByte()
 		if err != nil || b2 != '[' {
 			return "esc", nil
@@ -1214,12 +1220,16 @@ func (u *ui) promptLine(label string) (string, bool) {
 		}
 		switch {
 		case b == 0x1b:
+			// Lone Esc (no buffered follow-bytes) cancels immediately; an
+			// arrow/nav sequence arrives buffered, so consume and ignore it.
+			if u.reader.Buffered() == 0 {
+				return "", false
+			}
 			b2, err := u.reader.ReadByte()
 			if err != nil {
 				return "", false
 			}
 			if b2 == '[' {
-				// arrow/nav escape sequence — consume and ignore
 				if _, err := u.reader.ReadByte(); err != nil {
 					return "", false
 				}
