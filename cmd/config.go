@@ -45,8 +45,17 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 
 	fmt.Printf("config file: %s\n", path)
 	fmt.Printf("notification-lead-days = %d\n", cfg.NotificationLeadDays)
+	fmt.Printf("notifications-enabled = %s\n", onOff(cfg.NotificationsOn()))
 	fmt.Printf("collapsed-sections = %s\n", formatCollapsedSections(cfg.CollapsedSections))
 	return nil
+}
+
+// onOff renders a bool as the "on"/"off" config display value.
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 func runConfigSet(_ *cobra.Command, args []string) error {
@@ -72,6 +81,13 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 		}
 		cfg.CollapsedSections = sections
 		display = formatCollapsedSections(sections)
+	case "notifications-enabled":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("nvy: notifications-enabled must be true or false: %w", err)
+		}
+		cfg.NotificationsEnabled = &b
+		display = onOff(b)
 	default:
 		return fmt.Errorf("nvy: unknown config key %q", key)
 	}

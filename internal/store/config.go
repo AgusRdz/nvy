@@ -14,6 +14,13 @@ type Config struct {
 	HiddenLocals         []string `json:"hidden_locals,omitempty"`
 	HiddenPath           []string `json:"hidden_path,omitempty"`
 	CollapsedSections    []string `json:"collapsed_sections,omitempty"`
+	NotificationsEnabled *bool    `json:"notifications_enabled,omitempty"`
+}
+
+// NotificationsOn reports whether notifications are enabled. Nil (unset)
+// defaults to on.
+func (c *Config) NotificationsOn() bool {
+	return c.NotificationsEnabled == nil || *c.NotificationsEnabled
 }
 
 // IsHiddenGlobal reports whether key is marked hidden in the global scope.

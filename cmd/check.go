@@ -22,6 +22,10 @@ func runCheck(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
 	}
+	if !cfg.NotificationsOn() {
+		fmt.Println("nvy: notifications disabled")
+		return nil
+	}
 
 	var fired int
 

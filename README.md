@@ -150,7 +150,7 @@ Tag any variable with an expiry:
 nvy set AWS_SESSION_TOKEN=... --global --expires 2026-10-01 --note "prod sso"
 ```
 
-`nvy init` registers a daily background task (Task Scheduler on Windows, launchd on macOS, cron on Linux) that runs `nvy check` and raises a native desktop notification for anything expired or expiring soon. `nvy list` flags them inline:
+`nvy init` registers a daily background task (Task Scheduler on Windows, launchd on macOS, cron on Linux) that runs `nvy check` and raises a native desktop notification for anything expired or expiring soon: "expires today", "expires tomorrow", "expires in N days", or "has already expired" once it's past due. `nvy list` flags them inline:
 
 ```
 GLOBAL
@@ -164,7 +164,16 @@ nvy set API_TOKEN --global --expires 2026-12-31   # adopts external / updates ma
 nvy set API_TOKEN --global --expires none         # clear it
 ```
 
-In `nvy ui`, press `[x]` on a variable to set or clear its expiry (external vars are imported first).
+In `nvy ui`, press `[x]` on a variable to set or clear its expiry (external vars are imported first). Keys are colored by urgency too — red once expired, yellow inside the lead-days window.
+
+Notifications are on by default; turn them off without touching the scheduled task:
+
+```bash
+nvy config set notifications-enabled false
+nvy config set notifications-enabled true
+```
+
+With them off, `nvy check` prints `nvy: notifications disabled` and exits cleanly — no toast/notify call is made. The `nvy ui` settings screen (`[c]`) has the same toggle on its `Notifications` field (`space`/`enter`/`←`/`→`).
 
 ---
 
@@ -203,6 +212,12 @@ On Windows this edits the user `PATH` in the registry (preserving `REG_EXPAND_SZ
 
 ---
 
+## Copy to clipboard
+
+In `nvy ui`, press `[y]` on the selected entry to copy it to the clipboard: `KEY=VALUE` (the real value, not the masked preview) for a GLOBAL/LOCAL var, or the raw entry for a PATH row. Uses `clip.exe` on Windows, `pbcopy` on macOS, and `wl-copy`/`xclip` (whichever is found) on Linux — no extra dependency.
+
+---
+
 ## Hiding entries
 
 Rarely-used globals, local vars, and PATH entries clutter `nvy list` / `nvy ui`. Mark them hidden to omit them by default — this is display-only, it never touches the actual variable or PATH:
@@ -237,7 +252,7 @@ In `nvy ui`, press `[⏎]` (Enter) on the focused section to toggle it collapsed
 
 ## Settings screen
 
-Rather than remembering config keys, press `[c]` in `nvy ui` to open a settings screen: adjust `notification-lead-days` with `←`/`→` and toggle the per-section collapse defaults with `space`/`←`/`→`. Changes save to `~/.nvy/config.json` immediately. `nvy config edit` (opens `$EDITOR`) and `nvy config set` remain as fallbacks.
+Rather than remembering config keys, press `[c]` in `nvy ui` to open a settings screen: adjust `notification-lead-days` with `←`/`→`, toggle the per-section collapse defaults with `space`/`←`/`→`, and toggle `notifications-enabled` the same way. Changes save to `~/.nvy/config.json` immediately. `nvy config edit` (opens `$EDITOR`) and `nvy config set` remain as fallbacks.
 
 ---
 
