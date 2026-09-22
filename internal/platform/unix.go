@@ -184,6 +184,8 @@ func registerLaunchd(binaryPath string) error {
 	}
 
 	plistPath := filepath.Join(dir, "run.nvy.check.plist")
+	// StartInterval fires every 4h; RunAtLoad covers at-logon/load. launchd
+	// runs a missed StartInterval job on wake, giving catch-up for free.
 	plist := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -194,11 +196,8 @@ func registerLaunchd(binaryPath string) error {
         <string>` + binaryPath + `</string>
         <string>check</string>
     </array>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key><integer>9</integer>
-        <key>Minute</key><integer>0</integer>
-    </dict>
+    <key>RunAtLoad</key><true/>
+    <key>StartInterval</key><integer>14400</integer>
 </dict>
 </plist>
 `
@@ -216,24 +215,30 @@ func registerLaunchd(binaryPath string) error {
 	return nil
 }
 
+// registerCron installs two tagged lines: @reboot for at-logon/boot, and an
+// every-4h line for the repeat. cron has no native run-if-missed, so
+// @reboot + every-4h is the closest approximation to catch-up. Re-running
+// this replaces any existing "# nvy-check" lines, making it idempotent.
 func registerCron(binaryPath string) error {
-	cronLine := "0 9 * * * " + binaryPath + " check  # nvy-check"
-
-	// read existing crontab
 	out, _ := exec.Command("crontab", "-l").Output()
 	existing := string(out)
 
-	if strings.Contains(existing, "# nvy-check") {
-		return nil // already registered
+	var kept []string
+	for _, l := range strings.Split(existing, "\n") {
+		if l == "" || strings.Contains(l, "# nvy-check") {
+			continue
+		}
+		kept = append(kept, l)
 	}
 
-	if len(existing) > 0 && !strings.HasSuffix(existing, "\n") {
-		existing += "\n"
-	}
-	existing += cronLine + "\n"
+	kept = append(kept,
+		"@reboot "+binaryPath+" check  # nvy-check",
+		"0 */4 * * * "+binaryPath+" check  # nvy-check",
+	)
 
+	result := strings.Join(kept, "\n") + "\n"
 	cmd := exec.Command("crontab", "-")
-	cmd.Stdin = bytes.NewBufferString(existing)
+	cmd.Stdin = bytes.NewBufferString(result)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("crontab: %w — %s", err, string(out))

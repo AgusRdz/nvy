@@ -53,7 +53,7 @@ Global vars appear on the next prompt; a project's `.env` loads when you enter i
 
 ## Install
 
-`nvy` ships signed binaries for Linux, macOS, and Windows (amd64 + arm64). The installer downloads the right binary, verifies its SHA-256 checksum, installs the shell hook, and schedules the daily expiration check.
+`nvy` ships signed binaries for Linux, macOS, and Windows (amd64 + arm64). The installer downloads the right binary, verifies its SHA-256 checksum, installs the shell hook, and schedules the expiration check.
 
 **macOS / Linux:**
 
@@ -115,7 +115,7 @@ nvy remove API_URL                     # delete
 ## Commands
 
 ```
-nvy init                       Install the shell hook + register the daily expiration check
+nvy init                       Install the shell hook + register the expiration check schedule
 nvy set KEY[=value] [flags]    Set a variable, or (bare KEY) stamp its expiry/note
 nvy get KEY [--global|--local] Print a variable's value
 nvy remove KEY [scope]         Delete a variable
@@ -150,7 +150,7 @@ Tag any variable with an expiry:
 nvy set AWS_SESSION_TOKEN=... --global --expires 2026-10-01 --note "prod sso"
 ```
 
-`nvy init` registers a daily background task (Task Scheduler on Windows, launchd on macOS, cron on Linux) that runs `nvy check` and raises a native desktop notification for anything expired or expiring soon: "expires today", "expires tomorrow", "expires in N days", or "has already expired" once it's past due. `nvy list` flags them inline:
+`nvy init` registers a background task (Task Scheduler on Windows, launchd on macOS, cron on Linux) that runs `nvy check` about **every 4 hours** — plus at login and with catch-up-after-downtime on macOS/Linux (those extra triggers need admin on Windows, so it stays every-4h there). Re-run `nvy init` after upgrading `nvy` to pick up schedule changes. It raises a native desktop notification for anything expired or expiring soon: "expires today", "expires tomorrow", "expires in N days", or "has already expired" once past due — at most **once per calendar day per variable**, so the frequent schedule doesn't re-toast the same var. `nvy list` flags them inline:
 
 ```
 GLOBAL

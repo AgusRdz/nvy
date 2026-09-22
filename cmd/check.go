@@ -27,7 +27,24 @@ func runCheck(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	var fired int
+	state, err := store.LoadNotifyState()
+	if err != nil {
+		return fmt.Errorf("nvy: %w", err)
+	}
+	today := time.Now().Format("2006-01-02")
+
+	var due int
+
+	notifyOnce := func(key string, days int) {
+		due++
+		if !shouldNotify(state[key], today) {
+			return
+		}
+		if err := notify.Expiring(key, days); err != nil {
+			fmt.Fprintf(os.Stderr, "nvy: notify %s: %v\n", key, err)
+		}
+		state[key] = today
+	}
 
 	// global vars
 	gs, err := store.LoadGlobal()
@@ -40,10 +57,7 @@ func runCheck(_ *cobra.Command, _ []string) error {
 		}
 		days := daysUntil(*entry.ExpiresAt)
 		if days <= cfg.NotificationLeadDays {
-			if err := notify.Expiring(key, days); err != nil {
-				fmt.Fprintf(os.Stderr, "nvy: notify %s: %v\n", key, err)
-			}
-			fired++
+			notifyOnce(key, days)
 		}
 	}
 
@@ -58,16 +72,17 @@ func runCheck(_ *cobra.Command, _ []string) error {
 				}
 				days := daysUntil(*entry.ExpiresAt)
 				if days <= cfg.NotificationLeadDays {
-					if err := notify.Expiring(key, days); err != nil {
-						fmt.Fprintf(os.Stderr, "nvy: notify %s: %v\n", key, err)
-					}
-					fired++
+					notifyOnce(key, days)
 				}
 			}
 		}
 	}
 
-	if fired == 0 {
+	if err := store.SaveNotifyState(state); err != nil {
+		return fmt.Errorf("nvy: %w", err)
+	}
+
+	if due == 0 {
 		fmt.Println("nvy: no expiring variables")
 	}
 	return nil
@@ -75,4 +90,10 @@ func runCheck(_ *cobra.Command, _ []string) error {
 
 func daysUntil(t time.Time) int {
 	return int(time.Until(t).Hours() / 24)
+}
+
+// shouldNotify reports whether a var last notified on lastNotified should be
+// notified again on today. True unless it was already notified today.
+func shouldNotify(lastNotified, today string) bool {
+	return lastNotified != today
 }

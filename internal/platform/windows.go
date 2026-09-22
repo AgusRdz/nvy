@@ -167,18 +167,23 @@ func (p *windowsPlatform) ShellConfigPath() string {
 	return filepath.Join(profile, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1")
 }
 
+// RegisterBackgroundTask registers TN "nvy-check" to run "nvy check" every 4
+// hours. It uses basic schtasks, which works WITHOUT elevation — the richer
+// ScheduledTasks CIM cmdlets and XML-with-logon-triggers all require admin
+// (Access Denied otherwise). An every-4h cadence means a check runs at least
+// that often whenever the machine is on; logon/catch-up triggers are a
+// Unix-only extra (they'd need admin here).
 func (p *windowsPlatform) RegisterBackgroundTask(binaryPath string) error {
-	// schtasks /Create /TN "nvy-check" /TR "<binary> check" /SC DAILY /ST 09:00 /F
 	cmd := exec.Command("schtasks", "/Create",
 		"/TN", "nvy-check",
-		"/TR", binaryPath+" check",
-		"/SC", "DAILY",
-		"/ST", "09:00",
-		"/F", // force overwrite if exists
+		"/TR", `"`+binaryPath+`" check`,
+		"/SC", "HOURLY",
+		"/MO", "4",
+		"/F",
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("schtasks: %w — %s", err, string(out))
+		return fmt.Errorf("nvy: register scheduled task: %w — %s", err, string(out))
 	}
 	return nil
 }

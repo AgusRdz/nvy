@@ -38,39 +38,41 @@ func runInit(_ *cobra.Command, _ []string) error {
 
 	if strings.Contains(content, "# nvy hook") {
 		fmt.Printf("nvy: hook already installed in %s\n", configPath)
-		return nil
-	}
+	} else {
+		if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+			return fmt.Errorf("nvy: create config dir: %w", err)
+		}
 
-	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
-		return fmt.Errorf("nvy: create config dir: %w", err)
-	}
+		f, err := os.OpenFile(configPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("nvy: open %s: %w", configPath, err)
+		}
+		defer f.Close()
 
-	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("nvy: open %s: %w", configPath, err)
-	}
-	defer f.Close()
-
-	// ensure blank line separator
-	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
-		if _, err := f.WriteString("\n"); err != nil {
+		// ensure blank line separator
+		if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+			if _, err := f.WriteString("\n"); err != nil {
+				return fmt.Errorf("nvy: write %s: %w", configPath, err)
+			}
+		}
+		if _, err := f.WriteString("\n" + hookScript); err != nil {
 			return fmt.Errorf("nvy: write %s: %w", configPath, err)
 		}
-	}
-	if _, err := f.WriteString("\n" + hookScript); err != nil {
-		return fmt.Errorf("nvy: write %s: %w", configPath, err)
+
+		fmt.Printf("nvy: hook installed in %s\n", configPath)
+		fmt.Printf("     restart your shell or run: source %s\n", configPath)
 	}
 
-	fmt.Printf("nvy: hook installed in %s\n", configPath)
-	fmt.Printf("     restart your shell or run: source %s\n", configPath)
-
-	// register daily background check task
+	// Always (re-)register the background check task, even when the hook was
+	// already installed — this is what lets an upgraded binary apply a newer
+	// schedule. Registration is idempotent (Register-ScheduledTask -Force,
+	// cron/launchd replace their tagged entries).
 	binary, err := os.Executable()
 	if err == nil {
 		if err := p.RegisterBackgroundTask(binary); err != nil {
 			fmt.Fprintf(os.Stderr, "nvy: warning: could not register background task: %v\n", err)
 		} else {
-			fmt.Println("nvy: daily expiration check scheduled")
+			fmt.Println("nvy: expiration check scheduled (every ~4h)")
 		}
 	}
 
