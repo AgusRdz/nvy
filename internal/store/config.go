@@ -5,10 +5,78 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 type Config struct {
-	NotificationLeadDays int `json:"notification_lead_days"`
+	NotificationLeadDays int      `json:"notification_lead_days"`
+	HiddenGlobals        []string `json:"hidden_globals,omitempty"`
+	HiddenLocals         []string `json:"hidden_locals,omitempty"`
+	HiddenPath           []string `json:"hidden_path,omitempty"`
+	CollapsedSections    []string `json:"collapsed_sections,omitempty"`
+}
+
+// IsHiddenGlobal reports whether key is marked hidden in the global scope.
+func (c *Config) IsHiddenGlobal(key string) bool { return isHidden(c.HiddenGlobals, key) }
+
+// IsHiddenLocal reports whether key is marked hidden in the local scope.
+func (c *Config) IsHiddenLocal(key string) bool { return isHidden(c.HiddenLocals, key) }
+
+// IsHiddenPath reports whether the PATH entry is marked hidden.
+func (c *Config) IsHiddenPath(entry string) bool { return isHidden(c.HiddenPath, entry) }
+
+// SetHiddenGlobal adds or removes key from the hidden-globals list. Idempotent.
+func (c *Config) SetHiddenGlobal(key string, hidden bool) {
+	c.HiddenGlobals = setHidden(c.HiddenGlobals, key, hidden)
+}
+
+// SetHiddenLocal adds or removes key from the hidden-locals list. Idempotent.
+func (c *Config) SetHiddenLocal(key string, hidden bool) {
+	c.HiddenLocals = setHidden(c.HiddenLocals, key, hidden)
+}
+
+// SetHiddenPath adds or removes entry from the hidden-path list. Idempotent.
+func (c *Config) SetHiddenPath(entry string, hidden bool) {
+	c.HiddenPath = setHidden(c.HiddenPath, entry, hidden)
+}
+
+// IsCollapsed reports whether the named section (global/local/path) starts
+// collapsed in `nvy ui`.
+func (c *Config) IsCollapsed(section string) bool {
+	for _, s := range c.CollapsedSections {
+		if s == section {
+			return true
+		}
+	}
+	return false
+}
+
+// isHidden reports whether key is present in the sorted list.
+func isHidden(list []string, key string) bool {
+	i := sort.SearchStrings(list, key)
+	return i < len(list) && list[i] == key
+}
+
+// setHidden adds or removes key from the sorted list, keeping it sorted.
+// Idempotent: hiding an already-hidden key or unhiding an absent one is a no-op.
+func setHidden(list []string, key string, hidden bool) []string {
+	i := sort.SearchStrings(list, key)
+	found := i < len(list) && list[i] == key
+
+	if hidden {
+		if found {
+			return list
+		}
+		list = append(list, "")
+		copy(list[i+1:], list[i:])
+		list[i] = key
+		return list
+	}
+
+	if !found {
+		return list
+	}
+	return append(list[:i], list[i+1:]...)
 }
 
 func DefaultConfig() Config {

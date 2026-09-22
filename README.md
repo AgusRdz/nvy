@@ -119,7 +119,13 @@ nvy init                       Install the shell hook + register the daily expir
 nvy set KEY[=value] [flags]    Set a variable, or (bare KEY) stamp its expiry/note
 nvy get KEY [--global|--local] Print a variable's value
 nvy remove KEY [scope]         Delete a variable
-nvy list [--global|--local]    List variables (managed + external, expiry-aware)
+nvy list [--global|--local|--path] [--all]
+                                List variables (managed + external, expiry-aware);
+                                hidden entries are omitted unless --all is passed
+nvy hide <name> [--local|--path]
+                                Hide an entry from the default list/ui view
+nvy unhide <name> [--local|--path]
+                                Reveal a previously hidden entry
 nvy import KEY... | --all      Adopt external OS vars into nvy's global store
 nvy path add|remove|list       Manage individual PATH entries
 nvy check                      Scan for expiring vars and notify (run by the scheduler)
@@ -194,6 +200,40 @@ nvy path list
 ```
 
 On Windows this edits the user `PATH` in the registry (preserving `REG_EXPAND_SZ`); on macOS/Linux it goes through the shell hook.
+
+---
+
+## Hiding entries
+
+Rarely-used globals, local vars, and PATH entries clutter `nvy list` / `nvy ui`. Mark them hidden to omit them by default — this is display-only, it never touches the actual variable or PATH:
+
+```bash
+nvy hide OLD_TOKEN                 # global (default scope)
+nvy hide DEBUG --local             # local .env var
+nvy hide /some/old/dir --path      # PATH entry
+
+nvy list                           # OLD_TOKEN etc. omitted, with a "(N hidden — use --all)" note
+nvy list --all                     # shows everything, hidden entries tagged (hidden)
+
+nvy unhide OLD_TOKEN                # bring it back
+```
+
+In `nvy ui`, press `[h]` to toggle hidden on the selected entry and `[H]` to reveal hidden entries for the session.
+
+---
+
+## Collapsible TUI sections
+
+Config-driven: `collapsed-sections` lists which `nvy ui` sections (`global`, `local`, `path`) start collapsed (header only, rows hidden):
+
+```bash
+nvy config set collapsed-sections path        # start with PATH collapsed
+nvy config set collapsed-sections path,local  # multiple sections
+nvy config set collapsed-sections none        # clear it (all start expanded)
+nvy config                                     # collapsed-sections = path,local
+```
+
+In `nvy ui`, press `[⏎]` (Enter) on the focused section to toggle it collapsed/expanded for the current session — this never rewrites the config.
 
 ---
 

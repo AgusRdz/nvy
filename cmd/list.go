@@ -20,25 +20,42 @@ var listCmd = &cobra.Command{
 var (
 	listGlobal bool
 	listLocal  bool
+	listPath   bool
+	listAll    bool
 )
 
 func init() {
 	listCmd.Flags().BoolVar(&listGlobal, "global", false, "list global vars only")
 	listCmd.Flags().BoolVar(&listLocal, "local", false, "list local .env vars only")
+	listCmd.Flags().BoolVar(&listPath, "path", false, "list PATH entries only")
+	listCmd.Flags().BoolVar(&listAll, "all", false, "include hidden entries")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	showGlobal := listGlobal || (!listGlobal && !listLocal)
-	showLocal := listLocal || (!listGlobal && !listLocal)
+	noScope := !listGlobal && !listLocal && !listPath
+	showGlobal := listGlobal || noScope
+	showLocal := listLocal || noScope
+	showPath := listPath // PATH is opt-in; a bare `nvy list` stays global + local
+
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("nvy: %w", err)
+	}
 
 	if showGlobal {
-		if err := printGlobalList(); err != nil {
+		if err := printGlobalList(cfg, listAll); err != nil {
 			return err
 		}
 	}
 
 	if showLocal {
-		if err := printLocalList(); err != nil {
+		if err := printLocalList(cfg, listAll); err != nil {
+			return err
+		}
+	}
+
+	if showPath {
+		if err := printPathList(cfg, listAll); err != nil {
 			return err
 		}
 	}
@@ -46,7 +63,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func printGlobalList() error {
+func printGlobalList(cfg store.Config, all bool) error {
 	gs, err := store.LoadGlobal()
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
@@ -69,8 +86,16 @@ func printGlobalList() error {
 
 	fmt.Println("GLOBAL")
 
+	hidden := 0
 	keys := sortedKeys(gs)
 	for _, k := range keys {
+		isHidden := cfg.IsHiddenGlobal(k)
+		if isHidden {
+			hidden++
+			if !all {
+				continue
+			}
+		}
 		entry := gs[k]
 		line := fmt.Sprintf("  nvy  %-30s", k)
 		line += fmt.Sprintf("  updated %s", entry.UpdatedAt.Local().Format("2006-01-02"))
@@ -88,21 +113,74 @@ func printGlobalList() error {
 		if entry.Note != "" {
 			line += fmt.Sprintf("  [%s]", entry.Note)
 		}
+		if isHidden {
+			line += "  (hidden)"
+		}
 		fmt.Println(line)
 	}
 
 	if extErr != nil {
 		fmt.Printf("  (external vars unavailable: %v)\n", extErr)
+	} else {
+		extKeys := make([]string, 0, len(external))
+		for k := range external {
+			extKeys = append(extKeys, k)
+		}
+		sort.Strings(extKeys)
+		for _, k := range extKeys {
+			isHidden := cfg.IsHiddenGlobal(k)
+			if isHidden {
+				hidden++
+				if !all {
+					continue
+				}
+			}
+			line := fmt.Sprintf("  ext  %-30s  %s  (external, read-only)", k, maskValue(external[k]))
+			if isHidden {
+				line += "  (hidden)"
+			}
+			fmt.Println(line)
+		}
+	}
+
+	if hidden > 0 && !all {
+		fmt.Printf("  (%d hidden — use --all)\n", hidden)
+	}
+
+	return nil
+}
+
+func printPathList(cfg store.Config, all bool) error {
+	entries, err := platform.Get().GetPath()
+	if err != nil {
+		return fmt.Errorf("nvy: %w", err)
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("path: (empty)")
 		return nil
 	}
 
-	extKeys := make([]string, 0, len(external))
-	for k := range external {
-		extKeys = append(extKeys, k)
+	fmt.Println("PATH")
+
+	hidden := 0
+	for _, e := range entries {
+		isHidden := cfg.IsHiddenPath(e)
+		if isHidden {
+			hidden++
+			if !all {
+				continue
+			}
+		}
+		line := "  " + e
+		if isHidden {
+			line += "  (hidden)"
+		}
+		fmt.Println(line)
 	}
-	sort.Strings(extKeys)
-	for _, k := range extKeys {
-		fmt.Printf("  ext  %-30s  %s  (external, read-only)\n", k, maskValue(external[k]))
+
+	if hidden > 0 && !all {
+		fmt.Printf("  (%d hidden — use --all)\n", hidden)
 	}
 
 	return nil
@@ -122,7 +200,7 @@ func maskValue(v string) string {
 	return string(r[:n]) + "••••"
 }
 
-func printLocalList() error {
+func printLocalList(cfg store.Config, all bool) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
@@ -150,7 +228,15 @@ func printLocalList() error {
 	sort.Strings(keys)
 
 	fmt.Printf("LOCAL (%s/.env)\n", dir)
+	hidden := 0
 	for _, k := range keys {
+		isHidden := cfg.IsHiddenLocal(k)
+		if isHidden {
+			hidden++
+			if !all {
+				continue
+			}
+		}
 		line := fmt.Sprintf("  %-30s", k)
 		if m, ok := meta[k]; ok {
 			line += fmt.Sprintf("  updated %s", m.UpdatedAt.Local().Format("2006-01-02"))
@@ -169,7 +255,13 @@ func printLocalList() error {
 				line += fmt.Sprintf("  [%s]", m.Note)
 			}
 		}
+		if isHidden {
+			line += "  (hidden)"
+		}
 		fmt.Println(line)
+	}
+	if hidden > 0 && !all {
+		fmt.Printf("  (%d hidden — use --all)\n", hidden)
 	}
 	return nil
 }
