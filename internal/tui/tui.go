@@ -73,7 +73,17 @@ type ui struct {
 	// collapsed sections ("global"/"local"/"path"): [⏎] session toggle, seeded
 	// from cfg.CollapsedSections on first load. Never written back to config.
 	collapsed map[string]bool
+
+	// settings screen: [c] toggle. When true, render()/the key loop switch to
+	// the SETTINGS view; settingsCursor is the focused field (0..3).
+	settings       bool
+	settingsCursor int
 }
+
+// collapsedSectionOrder is the canonical section order used when persisting
+// cfg.CollapsedSections from the settings screen (store.setHidden's sorted-list
+// helper is alphabetical and doesn't fit here — global/local/path is fixed).
+var collapsedSectionOrder = []string{"global", "local", "path"}
 
 // sectionName maps a section index (0=global 1=local 2=path) to its config name.
 func sectionName(section int) string {
@@ -129,6 +139,11 @@ func Run() error {
 			break
 		}
 
+		if u.settings {
+			u.handleSettingsKey(key)
+			continue
+		}
+
 		switch key {
 		case "q", "ctrl+c":
 			return nil
@@ -180,6 +195,15 @@ func Run() error {
 			}
 			u.cursor = 0
 			u.msg = ""
+
+		case "c":
+			if cfg, err := store.LoadConfig(); err == nil {
+				u.cfg = cfg
+			} else {
+				u.msg = red("error: " + err.Error())
+			}
+			u.settings = true
+			u.settingsCursor = 0
 		}
 	}
 	return nil
@@ -203,17 +227,65 @@ func (u *ui) render() {
 	u.writeLine(&sb, bold("nvy")+dim(" — environment variable manager"))
 	sb.WriteString(dim(strings.Repeat("─", min(u.width, 80))) + "\n\n")
 
-	u.writeSection(&sb, 0, "GLOBAL VARS", u.renderGlobalRows(), u.globalHiddenN)
-	u.writeSection(&sb, 1, "LOCAL VARS  "+dim("(.env)"), u.renderLocalRows(), u.localHiddenN)
-	u.writePathSection(&sb)
+	if u.settings {
+		u.renderSettings(&sb)
+	} else {
+		u.writeSection(&sb, 0, "GLOBAL VARS", u.renderGlobalRows(), u.globalHiddenN)
+		u.writeSection(&sb, 1, "LOCAL VARS  "+dim("(.env)"), u.renderLocalRows(), u.localHiddenN)
+		u.writePathSection(&sb)
+	}
 
 	sb.WriteString(dim(strings.Repeat("─", min(u.width, 80))) + "\n")
 	if u.msg != "" {
 		u.writeLine(&sb, "  "+u.msg)
 	}
-	u.writeFooter(&sb)
+	if u.settings {
+		u.writeSettingsFooter(&sb)
+	} else {
+		u.writeFooter(&sb)
+	}
 
 	fmt.Print(sb.String())
+}
+
+// renderSettings draws the SETTINGS screen: a cyan bold title (matching the
+// section headers) followed by the four focusable fields, with a focus caret
+// on the current one.
+func (u *ui) renderSettings(sb *strings.Builder) {
+	u.writeLine(sb, cyan(bold("  SETTINGS")))
+	sb.WriteString("\n")
+
+	fields := []string{
+		fmt.Sprintf("Notification lead days: %d", u.cfg.NotificationLeadDays),
+		"Collapse GLOBAL by default: " + checkbox(u.cfg.IsCollapsed("global")),
+		"Collapse LOCAL by default:  " + checkbox(u.cfg.IsCollapsed("local")),
+		"Collapse PATH by default:   " + checkbox(u.cfg.IsCollapsed("path")),
+	}
+	for i, f := range fields {
+		var line string
+		if i == u.settingsCursor {
+			line = cyan("▸ ") + bold(f)
+		} else {
+			line = "  " + f
+		}
+		u.writeLine(sb, line)
+	}
+	sb.WriteString("\n")
+}
+
+// checkbox renders a settings checkbox field's current value.
+func checkbox(on bool) string {
+	if on {
+		return "[x]"
+	}
+	return "[ ]"
+}
+
+// writeSettingsFooter renders the settings screen's hotkey hints.
+func (u *ui) writeSettingsFooter(sb *strings.Builder) {
+	line := footerItem("↑↓", "field") + "  " + footerItem("←→", "change") +
+		"  " + footerItem("space", "toggle") + "  " + footerItem("esc", "back")
+	u.writeLine(sb, "  "+line)
 }
 
 // writeFooter lays out the hotkey hints, flowing them onto as many lines as
@@ -222,7 +294,7 @@ func (u *ui) writeFooter(sb *strings.Builder) {
 	items := []struct{ key, label string }{
 		{"←→", "section"}, {"↑↓", "navigate"}, {"n", "new"}, {"e", "edit"},
 		{"d", "delete"}, {"i", "import"}, {"x", "expiry"}, {"h", "hide"},
-		{"H", "show-hidden"}, {"⏎", "fold"}, {"q", "quit"},
+		{"H", "show-hidden"}, {"⏎", "fold"}, {"c", "config"}, {"q", "quit"},
 	}
 	const indent = "  "
 	const gap = 2 // visible width of the "  " separator between items
@@ -765,6 +837,121 @@ func parseExpiryInput(s string) (expiresAt *time.Time, ok bool) {
 		return nil, false
 	}
 	return &t, true
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+// handleSettingsKey routes a key while the settings screen owns input. It
+// fully replaces the normal-mode switch — no list-view hotkey acts here.
+func (u *ui) handleSettingsKey(key string) {
+	switch key {
+	case "up":
+		if u.settingsCursor > 0 {
+			u.settingsCursor--
+		}
+	case "down":
+		if u.settingsCursor < 3 {
+			u.settingsCursor++
+		}
+	case "left", "right":
+		if u.settingsCursor == 0 {
+			delta := 1
+			if key == "left" {
+				delta = -1
+			}
+			u.settingsAdjustLeadDays(delta)
+		} else {
+			u.toggleCollapsedDefault(collapsedSectionOrder[u.settingsCursor-1])
+		}
+	case " ", "enter":
+		if u.settingsCursor == 0 {
+			u.settingsAdjustLeadDays(1)
+		} else {
+			u.toggleCollapsedDefault(collapsedSectionOrder[u.settingsCursor-1])
+		}
+	case "esc", "q", "c":
+		u.leaveSettings()
+	}
+}
+
+// settingsAdjustLeadDays adjusts cfg.NotificationLeadDays by delta, clamped
+// to 0..365, and persists the change.
+func (u *ui) settingsAdjustLeadDays(delta int) {
+	v := u.cfg.NotificationLeadDays + delta
+	if v < 0 {
+		v = 0
+	}
+	if v > 365 {
+		v = 365
+	}
+	u.cfg.NotificationLeadDays = v
+	u.saveConfig()
+}
+
+// toggleCollapsedDefault flips whether section starts collapsed by default,
+// mutating cfg.CollapsedSections and persisting the change.
+func (u *ui) toggleCollapsedDefault(section string) {
+	if u.cfg.IsCollapsed(section) {
+		u.cfg.CollapsedSections = removeCollapsedSection(u.cfg.CollapsedSections, section)
+	} else {
+		u.cfg.CollapsedSections = addCollapsedSection(u.cfg.CollapsedSections, section)
+	}
+	u.saveConfig()
+}
+
+// saveConfig persists u.cfg, surfacing a failure via u.msg without crashing.
+func (u *ui) saveConfig() {
+	if err := store.SaveConfig(u.cfg); err != nil {
+		u.msg = red("error: " + err.Error())
+	}
+}
+
+// leaveSettings exits the settings screen, re-seeds the session collapsed-map
+// from the (possibly changed) cfg.CollapsedSections so new defaults take
+// effect, and reloads.
+func (u *ui) leaveSettings() {
+	u.settings = false
+	u.collapsed = make(map[string]bool, len(u.cfg.CollapsedSections))
+	for _, s := range u.cfg.CollapsedSections {
+		u.collapsed[s] = true
+	}
+	_ = u.reload()
+}
+
+// addCollapsedSection adds section to list if absent, keeping the list in
+// collapsedSectionOrder (global, local, path).
+func addCollapsedSection(list []string, section string) []string {
+	for _, s := range list {
+		if s == section {
+			return list
+		}
+	}
+	out := append(append([]string{}, list...), section)
+	rank := func(s string) int {
+		for i, o := range collapsedSectionOrder {
+			if o == s {
+				return i
+			}
+		}
+		return len(collapsedSectionOrder)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && rank(out[j]) < rank(out[j-1]); j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out
+}
+
+// removeCollapsedSection removes section from list, if present.
+func removeCollapsedSection(list []string, section string) []string {
+	out := make([]string, 0, len(list))
+	for _, s := range list {
+		if s != section {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -235,6 +235,10 @@ nvy config                                     # collapsed-sections = path,local
 
 In `nvy ui`, press `[⏎]` (Enter) on the focused section to toggle it collapsed/expanded for the current session — this never rewrites the config.
 
+## Settings screen
+
+Rather than remembering config keys, press `[c]` in `nvy ui` to open a settings screen: adjust `notification-lead-days` with `←`/`→` and toggle the per-section collapse defaults with `space`/`←`/`→`. Changes save to `~/.nvy/config.json` immediately. `nvy config edit` (opens `$EDITOR`) and `nvy config set` remain as fallbacks.
+
 ---
 
 ## Verification
