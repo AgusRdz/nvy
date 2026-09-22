@@ -12,10 +12,11 @@ $Arch = if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitec
 
 $Binary = "nvy-windows-$Arch.exe"
 
-# Get latest version
+# Get latest version — use the newest release from the list (newest first)
+# rather than /releases/latest, which lags while GitHub flips the "latest" flag.
 if (-not $env:NVY_VERSION) {
-    $Release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest"
-    $env:NVY_VERSION = $Release.tag_name
+    $Releases = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases"
+    $env:NVY_VERSION = ($Releases | Select-Object -First 1).tag_name
 }
 
 if (-not $env:NVY_VERSION) {

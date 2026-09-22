@@ -40,7 +40,9 @@ BINARY="nvy-${OS}-${ARCH}${EXT}"
 
 # Get latest version
 if [ -z "$NVY_VERSION" ]; then
-  NVY_VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"//;s/".*//')
+  # Use the most recent release from the list (newest first) rather than
+  # /releases/latest, which lags briefly while GitHub flips the "latest" flag.
+  NVY_VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')
 fi
 
 if [ -z "$NVY_VERSION" ]; then
