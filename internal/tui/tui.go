@@ -61,6 +61,7 @@ type ui struct {
 	width    int // terminal columns, sampled once per render(); min 20, fallback 80
 	oldState *term.State
 	reader   *bufio.Reader
+	input    chan byte // fed by the reader goroutine; main loop and promptLine consume it (never concurrently)
 
 	cfg        store.Config
 	showHidden bool // [H] session toggle; default false (hidden entries omitted)
@@ -130,86 +131,129 @@ func Run() error {
 	defer fmt.Print("\033[?1049l\033[?25h")
 
 	u.reader = bufio.NewReader(os.Stdin)
+	u.input = make(chan byte, 64)
+	go func() {
+		for {
+			b, err := u.reader.ReadByte()
+			if err != nil {
+				close(u.input)
+				return
+			}
+			u.input <- b
+		}
+	}()
+
+	resize := make(chan struct{}, 1)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		t := time.NewTicker(150 * time.Millisecond)
+		defer t.Stop()
+		lastW, _, _ := term.GetSize(u.fd)
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				w, _, err := term.GetSize(u.fd)
+				if err == nil && w != lastW {
+					lastW = w
+					select {
+					case resize <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
 
 	for {
 		u.render()
 
-		key, err := readKey(u.reader)
-		if err != nil {
-			break
-		}
-
-		if u.settings {
-			u.handleSettingsKey(key)
-			continue
-		}
-
-		switch key {
-		case "q", "ctrl+c":
-			return nil
-
-		case "up":
-			if u.cursor > 0 {
-				u.cursor--
+		select {
+		case b, ok := <-u.input:
+			if !ok {
+				return nil
 			}
-		case "down":
-			if u.cursor < u.sectionLen()-1 {
-				u.cursor++
+			key := u.parseKey(b)
+			if key == "" {
+				continue
 			}
-		case "left", "shift+tab":
-			u.section = (u.section + 2) % 3
-			u.cursor = 0
-			u.msg = ""
-		case "right", "tab":
-			u.section = (u.section + 1) % 3
-			u.cursor = 0
-			u.msg = ""
 
-		case "n":
-			u.cmdNew()
-
-		case "e":
-			u.cmdEdit()
-
-		case "d":
-			u.cmdDelete()
-
-		case "i":
-			u.cmdImport()
-
-		case "x":
-			u.cmdExpiry()
-
-		case "y":
-			u.cmdCopy()
-
-		case "h":
-			u.cmdToggleHidden()
-
-		case "H":
-			u.showHidden = !u.showHidden
-			_ = u.reload()
-			u.clampCursor()
-			u.msg = ""
-
-		case "enter":
-			if name := sectionName(u.section); name != "" {
-				u.collapsed[name] = !u.collapsed[name]
+			if u.settings {
+				u.handleSettingsKey(key)
+				continue
 			}
-			u.cursor = 0
-			u.msg = ""
 
-		case "c":
-			if cfg, err := store.LoadConfig(); err == nil {
-				u.cfg = cfg
-			} else {
-				u.msg = red("error: " + err.Error())
+			switch key {
+			case "q", "ctrl+c":
+				return nil
+
+			case "up":
+				if u.cursor > 0 {
+					u.cursor--
+				}
+			case "down":
+				if u.cursor < u.sectionLen()-1 {
+					u.cursor++
+				}
+			case "left", "shift+tab":
+				u.section = (u.section + 2) % 3
+				u.cursor = 0
+				u.msg = ""
+			case "right", "tab":
+				u.section = (u.section + 1) % 3
+				u.cursor = 0
+				u.msg = ""
+
+			case "n":
+				u.cmdNew()
+
+			case "e":
+				u.cmdEdit()
+
+			case "d":
+				u.cmdDelete()
+
+			case "i":
+				u.cmdImport()
+
+			case "x":
+				u.cmdExpiry()
+
+			case "y":
+				u.cmdCopy()
+
+			case "h":
+				u.cmdToggleHidden()
+
+			case "H":
+				u.showHidden = !u.showHidden
+				_ = u.reload()
+				u.clampCursor()
+				u.msg = ""
+
+			case "enter":
+				if name := sectionName(u.section); name != "" {
+					u.collapsed[name] = !u.collapsed[name]
+				}
+				u.cursor = 0
+				u.msg = ""
+
+			case "c":
+				if cfg, err := store.LoadConfig(); err == nil {
+					u.cfg = cfg
+				} else {
+					u.msg = red("error: " + err.Error())
+				}
+				u.settings = true
+				u.settingsCursor = 0
 			}
-			u.settings = true
-			u.settingsCursor = 0
+
+		case <-resize:
+			// fall through to re-render at the new width
 		}
 	}
-	return nil
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -1227,74 +1271,93 @@ func scrollWindow(cursor, total, max int, active bool) (start, end int) {
 	return
 }
 
-func readKey(r *bufio.Reader) (string, error) {
-	b, err := r.ReadByte()
-	if err != nil {
-		return "", err
-	}
+// parseKey parses one key given its first byte b, reading any follow-bytes
+// (arrow/nav sequences) from u.input with a short timeout — replaces the old
+// bufio.Reader.Buffered() lone-Esc trick now that reads go through a channel.
+func (u *ui) parseKey(b byte) string {
 	if b == 0x1b {
-		// A lone Esc has no buffered follow-bytes; an arrow/nav sequence
-		// (Esc [ …) arrives in the same read, so its bytes are already
-		// buffered. This avoids blocking on a single Esc waiting for more.
-		if r.Buffered() == 0 {
-			return "esc", nil
+		var b2 byte
+		select {
+		case v, ok := <-u.input:
+			if !ok {
+				return "esc"
+			}
+			b2 = v
+		case <-time.After(40 * time.Millisecond):
+			return "esc"
 		}
-		b2, err := r.ReadByte()
-		if err != nil || b2 != '[' {
-			return "esc", nil
+		if b2 != '[' {
+			return "esc"
 		}
-		b3, err := r.ReadByte()
-		if err != nil {
-			return "esc", nil
+		var b3 byte
+		select {
+		case v, ok := <-u.input:
+			if !ok {
+				return "esc"
+			}
+			b3 = v
+		case <-time.After(40 * time.Millisecond):
+			return "esc"
 		}
 		switch b3 {
 		case 'A':
-			return "up", nil
+			return "up"
 		case 'B':
-			return "down", nil
+			return "down"
 		case 'C':
-			return "right", nil
+			return "right"
 		case 'D':
-			return "left", nil
+			return "left"
 		case 'Z':
-			return "shift+tab", nil
+			return "shift+tab"
 		}
-		return "esc", nil
+		return "esc"
 	}
 	switch b {
 	case '\r', '\n':
-		return "enter", nil
+		return "enter"
 	case 3:
-		return "ctrl+c", nil
+		return "ctrl+c"
 	case 9:
-		return "tab", nil
+		return "tab"
 	}
-	return string(b), nil
+	return string(b)
 }
 
-// promptLine prints label and reads a line in raw mode from u.reader.
+// promptLine prints label and reads a line in raw mode from u.input.
 // Returns (text, true) on Enter; ("", false) if the user cancels with Esc or Ctrl+C.
+// Resize during a prompt is not reflowed — acceptable, the prompt is transient
+// and a queued resize is handled right after it returns.
 func (u *ui) promptLine(label string) (string, bool) {
 	fmt.Print(label)
 	var buf []byte
 	for {
-		b, err := u.reader.ReadByte()
-		if err != nil {
+		b, ok := <-u.input
+		if !ok {
 			return "", false
 		}
 		switch {
 		case b == 0x1b:
-			// Lone Esc (no buffered follow-bytes) cancels immediately; an
-			// arrow/nav sequence arrives buffered, so consume and ignore it.
-			if u.reader.Buffered() == 0 {
-				return "", false
-			}
-			b2, err := u.reader.ReadByte()
-			if err != nil {
+			// Lone Esc cancels immediately; an arrow/nav sequence arrives as
+			// a follow-up '[' + byte within the timeout, so consume and
+			// ignore it and keep editing.
+			var b2 byte
+			select {
+			case v, ok := <-u.input:
+				if !ok {
+					return "", false
+				}
+				b2 = v
+			case <-time.After(40 * time.Millisecond):
 				return "", false
 			}
 			if b2 == '[' {
-				if _, err := u.reader.ReadByte(); err != nil {
+				select {
+				case _, ok := <-u.input:
+					if !ok {
+						return "", false
+					}
+				case <-time.After(40 * time.Millisecond):
 					return "", false
 				}
 				continue
