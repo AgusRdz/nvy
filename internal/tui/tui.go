@@ -75,7 +75,7 @@ type ui struct {
 	collapsed map[string]bool
 
 	// settings screen: [c] toggle. When true, render()/the key loop switch to
-	// the SETTINGS view; settingsCursor is the focused field (0..3).
+	// the SETTINGS view; settingsCursor is the focused field (0..4).
 	settings       bool
 	settingsCursor int
 }
@@ -180,6 +180,9 @@ func Run() error {
 		case "x":
 			u.cmdExpiry()
 
+		case "y":
+			u.cmdCopy()
+
 		case "h":
 			u.cmdToggleHidden()
 
@@ -249,7 +252,7 @@ func (u *ui) render() {
 }
 
 // renderSettings draws the SETTINGS screen: a cyan bold title (matching the
-// section headers) followed by the four focusable fields, with a focus caret
+// section headers) followed by the five focusable fields, with a focus caret
 // on the current one.
 func (u *ui) renderSettings(sb *strings.Builder) {
 	u.writeLine(sb, cyan(bold("  SETTINGS")))
@@ -260,6 +263,7 @@ func (u *ui) renderSettings(sb *strings.Builder) {
 		"Collapse GLOBAL by default: " + checkbox(u.cfg.IsCollapsed("global")),
 		"Collapse LOCAL by default:  " + checkbox(u.cfg.IsCollapsed("local")),
 		"Collapse PATH by default:   " + checkbox(u.cfg.IsCollapsed("path")),
+		"Notifications: " + checkbox(u.cfg.NotificationsOn()),
 	}
 	for i, f := range fields {
 		var line string
@@ -293,7 +297,7 @@ func (u *ui) writeSettingsFooter(sb *strings.Builder) {
 func (u *ui) writeFooter(sb *strings.Builder) {
 	items := []struct{ key, label string }{
 		{"←→", "section"}, {"↑↓", "navigate"}, {"n", "new"}, {"e", "edit"},
-		{"d", "delete"}, {"i", "import"}, {"x", "expiry"}, {"h", "hide"},
+		{"d", "delete"}, {"i", "import"}, {"x", "expiry"}, {"y", "copy"}, {"h", "hide"},
 		{"H", "show-hidden"}, {"⏎", "fold"}, {"c", "config"}, {"q", "quit"},
 	}
 	const indent = "  "
@@ -455,19 +459,35 @@ func (u *ui) hiddenHeaderNote(n int) string {
 	return dim(fmt.Sprintf("  (%d hidden — H to show)", n))
 }
 
+// keyStyle colors a var key by its expiry urgency: red if expired, yellow if
+// within leadDays, else bold (unchanged).
+func keyStyle(key string, expiresAt *time.Time, leadDays int) string {
+	if expiresAt == nil {
+		return bold(key)
+	}
+	days := int(time.Until(*expiresAt).Hours() / 24)
+	if days < 0 {
+		return red(bold(key))
+	}
+	if days <= leadDays {
+		return yellow(bold(key))
+	}
+	return bold(key)
+}
+
 func (u *ui) renderGlobalRows() []string {
 	rows := make([]string, len(u.globals))
 	for i, r := range u.globals {
 		var line string
 		if r.external {
 			line = gray("ext ") + fmt.Sprintf("%-24s  %s  %s",
-				bold(r.key),
+				keyStyle(r.key, r.expiresAt, u.leadDays),
 				dim(maskValue(r.value)),
 				dim("(external, read-only)"),
 			)
 		} else {
 			line = green("nvy ") + fmt.Sprintf("%-24s  %s  %s",
-				bold(r.key),
+				keyStyle(r.key, r.expiresAt, u.leadDays),
 				dim(truncate(r.value, 18)),
 				expiryLabel(r.expiresAt, u.leadDays),
 			)
@@ -501,7 +521,7 @@ func (u *ui) renderLocalRows() []string {
 	rows := make([]string, len(u.locals))
 	for i, r := range u.locals {
 		line := green("nvy ") + fmt.Sprintf("%-24s  %s  %s",
-			bold(r.key),
+			keyStyle(r.key, r.expiresAt, u.leadDays),
 			dim(truncate(r.value, 18)),
 			expiryLabel(r.expiresAt, u.leadDays),
 		)
@@ -825,6 +845,36 @@ func (u *ui) cmdExpiry() {
 	u.msg = "updated expiry"
 }
 
+// cmdCopy copies the selected entry to the OS clipboard: KEY=VALUE (using the
+// row's real, unmasked value) for GLOBAL/LOCAL, or the raw entry for PATH.
+func (u *ui) cmdCopy() {
+	if u.sectionLen() == 0 {
+		return
+	}
+
+	var text, key string
+	switch u.section {
+	case 0:
+		r := u.globals[u.cursor]
+		text, key = r.key+"="+r.value, r.key
+	case 1:
+		r := u.locals[u.cursor]
+		text, key = r.key+"="+r.value, r.key
+	case 2:
+		text = u.path[u.cursor]
+	}
+
+	if err := platform.Get().Copy(text); err != nil {
+		u.msg = red("copy failed: " + err.Error())
+		return
+	}
+	if u.section == 2 {
+		u.msg = "copied PATH entry"
+	} else {
+		u.msg = "copied " + key
+	}
+}
+
 // parseExpiryInput parses the expiry prompt's raw input: blank clears the
 // expiry, a valid YYYY-MM-DD date sets it. ok is false for anything else.
 func parseExpiryInput(s string) (expiresAt *time.Time, ok bool) {
@@ -850,23 +900,29 @@ func (u *ui) handleSettingsKey(key string) {
 			u.settingsCursor--
 		}
 	case "down":
-		if u.settingsCursor < 3 {
+		if u.settingsCursor < 4 {
 			u.settingsCursor++
 		}
 	case "left", "right":
-		if u.settingsCursor == 0 {
+		switch {
+		case u.settingsCursor == 0:
 			delta := 1
 			if key == "left" {
 				delta = -1
 			}
 			u.settingsAdjustLeadDays(delta)
-		} else {
+		case u.settingsCursor == 4:
+			u.toggleNotifications()
+		default:
 			u.toggleCollapsedDefault(collapsedSectionOrder[u.settingsCursor-1])
 		}
 	case " ", "enter":
-		if u.settingsCursor == 0 {
+		switch {
+		case u.settingsCursor == 0:
 			u.settingsAdjustLeadDays(1)
-		} else {
+		case u.settingsCursor == 4:
+			u.toggleNotifications()
+		default:
 			u.toggleCollapsedDefault(collapsedSectionOrder[u.settingsCursor-1])
 		}
 	case "esc", "q", "c":
@@ -896,6 +952,14 @@ func (u *ui) toggleCollapsedDefault(section string) {
 	} else {
 		u.cfg.CollapsedSections = addCollapsedSection(u.cfg.CollapsedSections, section)
 	}
+	u.saveConfig()
+}
+
+// toggleNotifications flips whether notifications are enabled, mutating
+// cfg.NotificationsEnabled and persisting the change.
+func (u *ui) toggleNotifications() {
+	v := !u.cfg.NotificationsOn()
+	u.cfg.NotificationsEnabled = &v
 	u.saveConfig()
 }
 

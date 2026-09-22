@@ -208,3 +208,13 @@ func (p *windowsPlatform) RemoveBackgroundTask() error {
 	}
 	return nil
 }
+
+// Copy copies text to the Windows clipboard via clip.exe.
+func (p *windowsPlatform) Copy(text string) error {
+	cmd := exec.Command("clip.exe")
+	cmd.Stdin = strings.NewReader(text)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("nvy: clip.exe: %w — %s", err, string(out))
+	}
+	return nil
+}

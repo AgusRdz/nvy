@@ -332,3 +332,26 @@ func removeCron() error {
 	}
 	return nil
 }
+
+// Copy copies text to the clipboard: pbcopy on darwin, wl-copy or xclip on
+// Linux (whichever is found on PATH first).
+func (p *unixPlatform) Copy(text string) error {
+	var cmd *exec.Cmd
+	switch {
+	case runtime.GOOS == "darwin":
+		cmd = exec.Command("pbcopy")
+	default:
+		if path, err := exec.LookPath("wl-copy"); err == nil {
+			cmd = exec.Command(path)
+		} else if path, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command(path, "-selection", "clipboard")
+		} else {
+			return fmt.Errorf("nvy: no clipboard tool found (install xclip or wl-clipboard)")
+		}
+	}
+	cmd.Stdin = strings.NewReader(text)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("nvy: %s: %w — %s", cmd.Path, err, string(out))
+	}
+	return nil
+}

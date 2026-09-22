@@ -30,4 +30,7 @@ type Platform interface {
 	// RemoveBackgroundTask unregisters the daily expiration-check background
 	// task. It is a no-op (not an error) if the task isn't registered.
 	RemoveBackgroundTask() error
+
+	// Copy copies text to the OS clipboard.
+	Copy(text string) error
 }
