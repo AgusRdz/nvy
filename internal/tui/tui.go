@@ -51,6 +51,7 @@ type ui struct {
 	dir      string
 	fd       int
 	oldState *term.State
+	reader   *bufio.Reader
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────
@@ -84,12 +85,12 @@ func Run() error {
 	fmt.Print("\033[?1049h\033[?25h")
 	defer fmt.Print("\033[?1049l\033[?25h")
 
-	reader := bufio.NewReader(os.Stdin)
+	u.reader = bufio.NewReader(os.Stdin)
 
 	for {
 		u.render()
 
-		key, err := readKey(reader)
+		key, err := readKey(u.reader)
 		if err != nil {
 			break
 		}
@@ -116,31 +117,19 @@ func Run() error {
 			u.msg = ""
 
 		case "n":
-			u.restore()
 			u.cmdNew()
-			u.reenter()
-			enableVTInput()
 
 		case "e":
-			u.restore()
 			u.cmdEdit()
-			u.reenter()
-			enableVTInput()
 
 		case "d":
-			u.restore()
 			u.cmdDelete()
-			u.reenter()
-			enableVTInput()
 
 		case "i":
 			u.cmdImport()
 
 		case "x":
-			u.restore()
 			u.cmdExpiry()
-			u.reenter()
-			enableVTInput()
 		}
 	}
 	return nil
@@ -284,8 +273,11 @@ func (u *ui) cmdNew() {
 	case 1:
 		scope = "local"
 	case 2:
-		fmt.Print(cyan("New PATH entry: "))
-		entry := readLine()
+		entry, ok := u.promptLine(cyan("New PATH entry:") + dim("  (Esc cancels)") + " ")
+		if !ok {
+			u.msg = dim("cancelled")
+			return
+		}
 		if entry != "" {
 			if err := platform.Get().AddToPath(entry); err != nil {
 				u.msg = red("error: " + err.Error())
@@ -297,8 +289,11 @@ func (u *ui) cmdNew() {
 		return
 	}
 
-	fmt.Print(cyan(fmt.Sprintf("New %s var (KEY=VALUE): ", scope)))
-	input := readLine()
+	input, ok := u.promptLine(cyan(fmt.Sprintf("New %s var (KEY=VALUE):", scope)) + dim("  (Esc cancels)") + " ")
+	if !ok {
+		u.msg = dim("cancelled")
+		return
+	}
 	if input == "" {
 		return
 	}
@@ -342,8 +337,12 @@ func (u *ui) cmdEdit() {
 			return
 		}
 		clearScreen()
-		fmt.Printf(cyan("Edit ")+bold(r.key)+" "+dim("(current: %s)")+"\nNew value: ", r.value)
-		value := readLine()
+		label := fmt.Sprintf(cyan("Edit ")+bold(r.key)+" "+dim("(current: %s)")+"\r\nNew value: ", r.value) + dim("(Esc cancels) ")
+		value, ok := u.promptLine(label)
+		if !ok {
+			u.msg = dim("cancelled")
+			return
+		}
 		if value == "" {
 			return
 		}
@@ -366,8 +365,12 @@ func (u *ui) cmdEdit() {
 		}
 		r := u.locals[u.cursor]
 		clearScreen()
-		fmt.Printf(cyan("Edit ")+bold(r.key)+" "+dim("(current: %s)")+"\nNew value: ", r.value)
-		value := readLine()
+		label := fmt.Sprintf(cyan("Edit ")+bold(r.key)+" "+dim("(current: %s)")+"\r\nNew value: ", r.value) + dim("(Esc cancels) ")
+		value, ok := u.promptLine(label)
+		if !ok {
+			u.msg = dim("cancelled")
+			return
+		}
 		if value == "" {
 			return
 		}
@@ -382,8 +385,12 @@ func (u *ui) cmdEdit() {
 		}
 		entry := u.path[u.cursor]
 		clearScreen()
-		fmt.Printf(cyan("Edit PATH entry ")+dim("(current: %s)")+"\nNew value: ", entry)
-		newEntry := readLine()
+		label := fmt.Sprintf(cyan("Edit PATH entry ")+dim("(current: %s)")+"\r\nNew value: ", entry) + dim("(Esc cancels) ")
+		newEntry, ok := u.promptLine(label)
+		if !ok {
+			u.msg = dim("cancelled")
+			return
+		}
 		if newEntry == "" || newEntry == entry {
 			return
 		}
@@ -423,9 +430,8 @@ func (u *ui) cmdDelete() {
 	}
 
 	clearScreen()
-	fmt.Print(cyan("Delete ") + bold(key) + "? [y/N] ")
-	answer := readLine()
-	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+	label := cyan("Delete ") + bold(key) + "? [y/N]" + dim("  (Esc cancels)") + " "
+	if !u.confirm(label) {
 		return
 	}
 
@@ -499,8 +505,12 @@ func (u *ui) cmdExpiry() {
 		}
 
 		clearScreen()
-		fmt.Print(cyan("Expires (YYYY-MM-DD, blank to clear): "))
-		expiresAt, ok := parseExpiryInput(readLine())
+		input, ok := u.promptLine(cyan("Expires (YYYY-MM-DD, blank to clear):") + dim("  (Esc cancels)") + " ")
+		if !ok {
+			u.msg = dim("cancelled")
+			return
+		}
+		expiresAt, ok := parseExpiryInput(input)
 		if !ok {
 			u.msg = red("error: invalid date (YYYY-MM-DD)")
 			return
@@ -527,8 +537,12 @@ func (u *ui) cmdExpiry() {
 		r := u.locals[u.cursor]
 
 		clearScreen()
-		fmt.Print(cyan("Expires (YYYY-MM-DD, blank to clear): "))
-		expiresAt, ok := parseExpiryInput(readLine())
+		input, ok := u.promptLine(cyan("Expires (YYYY-MM-DD, blank to clear):") + dim("  (Esc cancels)") + " ")
+		if !ok {
+			u.msg = dim("cancelled")
+			return
+		}
+		expiresAt, ok := parseExpiryInput(input)
 		if !ok {
 			u.msg = red("error: invalid date (YYYY-MM-DD)")
 			return
@@ -715,12 +729,51 @@ func readKey(r *bufio.Reader) (string, error) {
 	return string(b), nil
 }
 
-func readLine() string {
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		return strings.TrimSpace(scanner.Text())
+// promptLine prints label and reads a line in raw mode from u.reader.
+// Returns (text, true) on Enter; ("", false) if the user cancels with Esc or Ctrl+C.
+func (u *ui) promptLine(label string) (string, bool) {
+	fmt.Print(label)
+	var buf []byte
+	for {
+		b, err := u.reader.ReadByte()
+		if err != nil {
+			return "", false
+		}
+		switch {
+		case b == 0x1b:
+			b2, err := u.reader.ReadByte()
+			if err != nil {
+				return "", false
+			}
+			if b2 == '[' {
+				// arrow/nav escape sequence — consume and ignore
+				if _, err := u.reader.ReadByte(); err != nil {
+					return "", false
+				}
+				continue
+			}
+			return "", false
+		case b == 3:
+			return "", false
+		case b == '\r' || b == '\n':
+			fmt.Print("\r\n")
+			return strings.TrimSpace(string(buf)), true
+		case b == 0x7f || b == 8:
+			if len(buf) > 0 {
+				buf = buf[:len(buf)-1]
+				fmt.Print("\b \b")
+			}
+		case b >= 0x20 && b != 0x7f:
+			buf = append(buf, b)
+			fmt.Print(string(b))
+		}
 	}
-	return ""
+}
+
+// confirm reads a y/N answer in raw mode; Esc/Ctrl+C or anything but y/Y is false.
+func (u *ui) confirm(label string) bool {
+	text, ok := u.promptLine(label)
+	return ok && strings.EqualFold(strings.TrimSpace(text), "y")
 }
 
 func clearScreen() {
