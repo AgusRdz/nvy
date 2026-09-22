@@ -292,7 +292,9 @@ func (u *ui) render() {
 		u.writeFooter(&sb)
 	}
 
-	fmt.Print(sb.String())
+	// In raw mode a bare "\n" is line-feed only (no carriage return), which
+	// staircases the layout on Unix terminals. Emit CRLF for every line break.
+	fmt.Print(strings.ReplaceAll(sb.String(), "\n", "\r\n"))
 }
 
 // renderSettings draws the SETTINGS screen: a cyan bold title (matching the
