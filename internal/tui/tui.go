@@ -211,23 +211,49 @@ func (u *ui) render() {
 	if u.msg != "" {
 		u.writeLine(&sb, "  "+u.msg)
 	}
-	u.writeLine(&sb, "  "+strings.Join([]string{
-		footerItem("←→", "section"),
-		footerItem("↑↓", "navigate"),
-		footerItem("n", "new"),
-		footerItem("e", "edit"),
-		footerItem("d", "delete"),
-		footerItem("i", "import"),
-		footerItem("x", "expiry"),
-	}, "  "))
-	u.writeLine(&sb, "  "+strings.Join([]string{
-		footerItem("h", "hide"),
-		footerItem("H", "show-hidden"),
-		footerItem("⏎", "fold"),
-		footerItem("q", "quit"),
-	}, "  "))
+	u.writeFooter(&sb)
 
 	fmt.Print(sb.String())
+}
+
+// writeFooter lays out the hotkey hints, flowing them onto as many lines as
+// the terminal width allows so no item is ever cut mid-label.
+func (u *ui) writeFooter(sb *strings.Builder) {
+	items := []struct{ key, label string }{
+		{"←→", "section"}, {"↑↓", "navigate"}, {"n", "new"}, {"e", "edit"},
+		{"d", "delete"}, {"i", "import"}, {"x", "expiry"}, {"h", "hide"},
+		{"H", "show-hidden"}, {"⏎", "fold"}, {"q", "quit"},
+	}
+	const indent = "  "
+	const gap = 2 // visible width of the "  " separator between items
+	avail := u.width - len(indent)
+
+	var line strings.Builder
+	lineVis := 0
+	flush := func() {
+		if line.Len() > 0 {
+			u.writeLine(sb, indent+line.String())
+			line.Reset()
+			lineVis = 0
+		}
+	}
+	for _, it := range items {
+		vis := utf8.RuneCountInString("[" + it.key + "] " + it.label)
+		need := vis
+		if lineVis > 0 {
+			need += gap
+		}
+		if lineVis > 0 && lineVis+need > avail {
+			flush()
+		}
+		if lineVis > 0 {
+			line.WriteString("  ")
+			lineVis += gap
+		}
+		line.WriteString(footerItem(it.key, it.label))
+		lineVis += vis
+	}
+	flush()
 }
 
 // writeLine truncates s to the terminal width (no wrapping) and writes it
