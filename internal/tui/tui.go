@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AgusRdz/nvy/internal/platform"
 	"github.com/AgusRdz/nvy/internal/store"
@@ -15,20 +16,26 @@ import (
 // ── ANSI ──────────────────────────────────────────────────────────────────────
 
 const (
-	ansiReset  = "\033[0m"
-	ansiBold   = "\033[1m"
-	ansiDim    = "\033[2m"
-	ansiRed    = "\033[31m"
-	ansiYellow = "\033[33m"
-	ansiCyan   = "\033[36m"
-	ansiClear  = "\033[2J\033[H"
+	ansiReset   = "\033[0m"
+	ansiBold    = "\033[1m"
+	ansiDim     = "\033[2m"
+	ansiRed     = "\033[31m"
+	ansiGreen   = "\033[32m"
+	ansiYellow  = "\033[33m"
+	ansiMagenta = "\033[35m"
+	ansiCyan    = "\033[36m"
+	ansiGray    = "\033[90m"
+	ansiClear   = "\033[2J\033[H"
 )
 
-func bold(s string) string   { return ansiBold + s + ansiReset }
-func dim(s string) string    { return ansiDim + s + ansiReset }
-func red(s string) string    { return ansiRed + s + ansiReset }
-func yellow(s string) string { return ansiYellow + s + ansiReset }
-func cyan(s string) string   { return ansiCyan + s + ansiReset }
+func bold(s string) string    { return ansiBold + s + ansiReset }
+func dim(s string) string     { return ansiDim + s + ansiReset }
+func red(s string) string     { return ansiRed + s + ansiReset }
+func green(s string) string   { return ansiGreen + s + ansiReset }
+func yellow(s string) string  { return ansiYellow + s + ansiReset }
+func magenta(s string) string { return ansiMagenta + s + ansiReset }
+func cyan(s string) string    { return ansiCyan + s + ansiReset }
+func gray(s string) string    { return ansiGray + s + ansiReset }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,6 +45,7 @@ type varRow struct {
 	expiresAt *time.Time
 	note      string
 	external  bool // set outside nvy (OS/registry); read-only until imported
+	hidden    bool // marked hidden via `nvy hide` / [h]
 }
 
 type ui struct {
@@ -50,8 +58,34 @@ type ui struct {
 	leadDays int
 	dir      string
 	fd       int
+	width    int // terminal columns, sampled once per render(); min 20, fallback 80
 	oldState *term.State
 	reader   *bufio.Reader
+
+	cfg        store.Config
+	showHidden bool // [H] session toggle; default false (hidden entries omitted)
+
+	// hidden entry counts per section, per current cfg — used for header notes.
+	globalHiddenN int
+	localHiddenN  int
+	pathHiddenN   int
+
+	// collapsed sections ("global"/"local"/"path"): [⏎] session toggle, seeded
+	// from cfg.CollapsedSections on first load. Never written back to config.
+	collapsed map[string]bool
+}
+
+// sectionName maps a section index (0=global 1=local 2=path) to its config name.
+func sectionName(section int) string {
+	switch section {
+	case 0:
+		return "global"
+	case 1:
+		return "local"
+	case 2:
+		return "path"
+	}
+	return ""
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────
@@ -130,6 +164,22 @@ func Run() error {
 
 		case "x":
 			u.cmdExpiry()
+
+		case "h":
+			u.cmdToggleHidden()
+
+		case "H":
+			u.showHidden = !u.showHidden
+			_ = u.reload()
+			u.clampCursor()
+			u.msg = ""
+
+		case "enter":
+			if name := sectionName(u.section); name != "" {
+				u.collapsed[name] = !u.collapsed[name]
+			}
+			u.cursor = 0
+			u.msg = ""
 		}
 	}
 	return nil
@@ -138,100 +188,199 @@ func Run() error {
 // ── Render ────────────────────────────────────────────────────────────────────
 
 func (u *ui) render() {
+	w, _, err := term.GetSize(u.fd)
+	width := 80
+	if err == nil && w > 0 {
+		width = w
+	}
+	if width < 20 {
+		width = 20
+	}
+	u.width = width
+
 	var sb strings.Builder
 	sb.WriteString(ansiClear)
-	sb.WriteString(bold("nvy") + dim(" — environment variable manager") + "\n")
-	sb.WriteString(dim(strings.Repeat("─", 60)) + "\n\n")
+	u.writeLine(&sb, bold("nvy")+dim(" — environment variable manager"))
+	sb.WriteString(dim(strings.Repeat("─", min(u.width, 80))) + "\n\n")
 
-	u.writeSection(&sb, 0, "GLOBAL VARS", u.renderGlobalRows())
-	u.writeSection(&sb, 1, "LOCAL VARS  "+dim("(.env)"), u.renderLocalRows())
+	u.writeSection(&sb, 0, "GLOBAL VARS", u.renderGlobalRows(), u.globalHiddenN)
+	u.writeSection(&sb, 1, "LOCAL VARS  "+dim("(.env)"), u.renderLocalRows(), u.localHiddenN)
 	u.writePathSection(&sb)
 
-	sb.WriteString(dim(strings.Repeat("─", 60)) + "\n")
+	sb.WriteString(dim(strings.Repeat("─", min(u.width, 80))) + "\n")
 	if u.msg != "" {
-		sb.WriteString("  " + u.msg + "\n")
+		u.writeLine(&sb, "  "+u.msg)
 	}
-	sb.WriteString(dim("  [←→] section  [↑↓] navigate  [n] new  [e] edit  [d] delete  [i] import  [x] expiry  [q] quit") + "\n")
+	u.writeLine(&sb, "  "+strings.Join([]string{
+		footerItem("←→", "section"),
+		footerItem("↑↓", "navigate"),
+		footerItem("n", "new"),
+		footerItem("e", "edit"),
+		footerItem("d", "delete"),
+		footerItem("i", "import"),
+		footerItem("x", "expiry"),
+	}, "  "))
+	u.writeLine(&sb, "  "+strings.Join([]string{
+		footerItem("h", "hide"),
+		footerItem("H", "show-hidden"),
+		footerItem("⏎", "fold"),
+		footerItem("q", "quit"),
+	}, "  "))
 
 	fmt.Print(sb.String())
 }
 
-func (u *ui) writeSection(sb *strings.Builder, idx int, title string, rows []string) {
-	hdr := cyan(bold("  " + title))
-	if u.section == idx {
-		hdr = cyan(bold("▸ " + title))
+// writeLine truncates s to the terminal width (no wrapping) and writes it
+// with a trailing newline.
+func (u *ui) writeLine(sb *strings.Builder, s string) {
+	sb.WriteString(truncateVisible(s, u.width) + "\n")
+}
+
+// footerItem renders one footer hotkey as "[key] label", with the bracketed
+// key in cyan (so it pops) and the label dim.
+func footerItem(key, label string) string {
+	return cyan("["+key+"]") + " " + dim(label)
+}
+
+// writeSection renders one global/local section header plus its rows, unless
+// the section is collapsed — then only the header and a fold marker are
+// written (rows suppressed). hiddenN feeds the header's "(N hidden)" note,
+// which only appears when the section is expanded; a collapsed header shows
+// the row count instead.
+func (u *ui) writeSection(sb *strings.Builder, idx int, title string, rows []string, hiddenN int) {
+	collapsed := u.collapsed[sectionName(idx)]
+
+	full := title
+	if collapsed {
+		full += dim(fmt.Sprintf("  (%d)", len(rows)))
+	} else {
+		full += u.hiddenHeaderNote(hiddenN)
 	}
-	sb.WriteString(hdr + "\n")
+
+	hdr := cyan(bold("  " + full))
+	if u.section == idx {
+		hdr = cyan(bold("▸ " + full))
+	}
+	u.writeLine(sb, hdr)
+
+	if collapsed {
+		u.writeLine(sb, dim("  [collapsed — Enter]"))
+		sb.WriteString("\n")
+		return
+	}
 
 	if len(rows) == 0 {
-		sb.WriteString(dim("  (empty)") + "\n\n")
+		u.writeLine(sb, dim("  (empty)"))
+		sb.WriteString("\n")
 		return
 	}
 
 	start, end := scrollWindow(u.cursor, len(rows), 6, u.section == idx)
 	if start > 0 {
-		sb.WriteString(dim(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+		u.writeLine(sb, dim(fmt.Sprintf("  ↑ %d more", start)))
 	}
 	for i := start; i < end; i++ {
 		selected := u.section == idx && u.cursor == i
+		var line string
 		if selected {
-			sb.WriteString(bold(ansiBold+"▸ "+rows[i]) + ansiReset + "\n")
+			line = cyan("▸ ") + bold(rows[i])
 		} else {
-			sb.WriteString("  " + rows[i] + "\n")
+			line = "  " + rows[i]
 		}
+		u.writeLine(sb, line)
 	}
 	if end < len(rows) {
-		sb.WriteString(dim(fmt.Sprintf("  ↓ %d more", len(rows)-end)) + "\n")
+		u.writeLine(sb, dim(fmt.Sprintf("  ↓ %d more", len(rows)-end)))
 	}
 	sb.WriteString("\n")
 }
 
 func (u *ui) writePathSection(sb *strings.Builder) {
-	hdr := cyan(bold(fmt.Sprintf("  PATH  ")) + dim(fmt.Sprintf("(%d entries)", len(u.path))))
-	if u.section == 2 {
-		hdr = cyan(bold(fmt.Sprintf("▸ PATH  ")) + dim(fmt.Sprintf("(%d entries)", len(u.path))))
+	collapsed := u.collapsed["path"]
+
+	suffix := dim(fmt.Sprintf("(%d entries)", len(u.path)))
+	if !collapsed {
+		suffix += u.hiddenHeaderNote(u.pathHiddenN)
 	}
-	sb.WriteString(hdr + "\n")
+	hdr := cyan(bold("  PATH  ") + suffix)
+	if u.section == 2 {
+		hdr = cyan(bold("▸ PATH  ") + suffix)
+	}
+	u.writeLine(sb, hdr)
+
+	if collapsed {
+		u.writeLine(sb, dim("  [collapsed — Enter]"))
+		sb.WriteString("\n")
+		return
+	}
 
 	if len(u.path) == 0 {
-		sb.WriteString(dim("  (empty)") + "\n\n")
+		u.writeLine(sb, dim("  (empty)"))
+		sb.WriteString("\n")
 		return
 	}
 
 	start, end := scrollWindow(u.cursor, len(u.path), 6, u.section == 2)
 	if start > 0 {
-		sb.WriteString(dim(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+		u.writeLine(sb, dim(fmt.Sprintf("  ↑ %d more", start)))
 	}
 	for i := start; i < end; i++ {
 		selected := u.section == 2 && u.cursor == i
-		if selected {
-			sb.WriteString(ansiBold + "▸ " + u.path[i] + ansiReset + "\n")
-		} else {
-			sb.WriteString(dim("  "+u.path[i]) + "\n")
+		text := u.path[i]
+		if u.cfg.IsHiddenPath(text) {
+			text += "  (hidden)"
 		}
+		var line string
+		if selected {
+			line = cyan("▸ ") + ansiBold + text + ansiReset
+		} else {
+			line = dim("  " + text)
+		}
+		u.writeLine(sb, line)
 	}
 	if end < len(u.path) {
-		sb.WriteString(dim(fmt.Sprintf("  ↓ %d more", len(u.path)-end)) + "\n")
+		u.writeLine(sb, dim(fmt.Sprintf("  ↓ %d more", len(u.path)-end)))
 	}
 	sb.WriteString("\n")
+}
+
+// hiddenHeaderNote returns a dim header suffix describing a section's hidden
+// entries: nothing when none are hidden, a count-with-hint when showHidden is
+// off, or a "showing hidden" note when it's on.
+func (u *ui) hiddenHeaderNote(n int) string {
+	if n == 0 {
+		return ""
+	}
+	if u.showHidden {
+		return dim("  (showing hidden)")
+	}
+	return dim(fmt.Sprintf("  (%d hidden — H to show)", n))
 }
 
 func (u *ui) renderGlobalRows() []string {
 	rows := make([]string, len(u.globals))
 	for i, r := range u.globals {
+		var line string
 		if r.external {
-			rows[i] = fmt.Sprintf("%-24s  %s  %s",
+			line = gray("ext ") + fmt.Sprintf("%-24s  %s  %s",
 				bold(r.key),
 				dim(maskValue(r.value)),
 				dim("(external, read-only)"),
 			)
-			continue
+		} else {
+			line = green("nvy ") + fmt.Sprintf("%-24s  %s  %s",
+				bold(r.key),
+				dim(truncate(r.value, 18)),
+				expiryLabel(r.expiresAt, u.leadDays),
+			)
+			if r.note != "" {
+				line += "  " + magenta("["+r.note+"]")
+			}
 		}
-		rows[i] = fmt.Sprintf("%-24s  %s  %s",
-			bold(r.key),
-			dim(truncate(r.value, 18)),
-			expiryLabel(r.expiresAt, u.leadDays),
-		)
+		if r.hidden {
+			line = dim(line + "  (hidden)")
+		}
+		rows[i] = line
 	}
 	return rows
 }
@@ -253,11 +402,18 @@ func maskValue(v string) string {
 func (u *ui) renderLocalRows() []string {
 	rows := make([]string, len(u.locals))
 	for i, r := range u.locals {
-		rows[i] = fmt.Sprintf("%-24s  %s  %s",
+		line := green("nvy ") + fmt.Sprintf("%-24s  %s  %s",
 			bold(r.key),
 			dim(truncate(r.value, 18)),
 			expiryLabel(r.expiresAt, u.leadDays),
 		)
+		if r.note != "" {
+			line += "  " + magenta("["+r.note+"]")
+		}
+		if r.hidden {
+			line = dim(line + "  (hidden)")
+		}
+		rows[i] = line
 	}
 	return rows
 }
@@ -588,17 +744,30 @@ func parseExpiryInput(s string) (expiresAt *time.Time, ok bool) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func (u *ui) reload() error {
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		return err
+	}
+	u.cfg = cfg
+
+	if u.collapsed == nil {
+		u.collapsed = make(map[string]bool, len(cfg.CollapsedSections))
+		for _, s := range cfg.CollapsedSections {
+			u.collapsed[s] = true
+		}
+	}
+
 	gs, err := store.LoadGlobal()
 	if err != nil {
 		return err
 	}
-	u.globals = make([]varRow, 0, len(gs))
+	allGlobals := make([]varRow, 0, len(gs))
 	managed := make(map[string]bool, len(gs))
 	for k, e := range gs {
 		managed[k] = true
-		u.globals = append(u.globals, varRow{key: k, value: e.Value, expiresAt: e.ExpiresAt, note: e.Note})
+		allGlobals = append(allGlobals, varRow{key: k, value: e.Value, expiresAt: e.ExpiresAt, note: e.Note, hidden: cfg.IsHiddenGlobal(k)})
 	}
-	sortRows(u.globals)
+	sortRows(allGlobals)
 
 	// Reflect OS-level user vars nvy did not set (read-only), excluding any
 	// key already managed. Mirrors `nvy list`. A read error is non-fatal.
@@ -608,30 +777,118 @@ func (u *ui) reload() error {
 			if managed[k] {
 				continue
 			}
-			extRows = append(extRows, varRow{key: k, value: v, external: true})
+			extRows = append(extRows, varRow{key: k, value: v, external: true, hidden: cfg.IsHiddenGlobal(k)})
 		}
 		sortRows(extRows)
-		u.globals = append(u.globals, extRows...)
+		allGlobals = append(allGlobals, extRows...)
 	}
+	u.globals, u.globalHiddenN = filterHiddenRows(allGlobals, u.showHidden)
 
 	env, err := store.LoadEnv(u.dir)
 	if err != nil {
 		return err
 	}
 	meta, _ := store.LoadLocalMeta(u.dir)
-	u.locals = make([]varRow, 0, len(env))
+	allLocals := make([]varRow, 0, len(env))
 	for k, v := range env {
-		r := varRow{key: k, value: v}
+		r := varRow{key: k, value: v, hidden: cfg.IsHiddenLocal(k)}
 		if m, ok := meta[k]; ok {
 			r.expiresAt = m.ExpiresAt
 			r.note = m.Note
 		}
-		u.locals = append(u.locals, r)
+		allLocals = append(allLocals, r)
 	}
-	sortRows(u.locals)
+	sortRows(allLocals)
+	u.locals, u.localHiddenN = filterHiddenRows(allLocals, u.showHidden)
 
-	u.path, _ = platform.Get().GetPath()
+	allPath, _ := platform.Get().GetPath()
+	u.path, u.pathHiddenN = filterHiddenPath(allPath, cfg, u.showHidden)
+
 	return nil
+}
+
+// filterHiddenRows splits rows into the visible subset (per showHidden) and
+// reports how many are hidden per cfg, regardless of visibility.
+func filterHiddenRows(rows []varRow, showHidden bool) (visible []varRow, hiddenN int) {
+	for _, r := range rows {
+		if r.hidden {
+			hiddenN++
+		}
+	}
+	if showHidden {
+		return rows, hiddenN
+	}
+	visible = make([]varRow, 0, len(rows)-hiddenN)
+	for _, r := range rows {
+		if !r.hidden {
+			visible = append(visible, r)
+		}
+	}
+	return visible, hiddenN
+}
+
+// filterHiddenPath is filterHiddenRows for the PATH section, whose entries
+// are plain strings rather than varRow.
+func filterHiddenPath(entries []string, cfg store.Config, showHidden bool) (visible []string, hiddenN int) {
+	for _, e := range entries {
+		if cfg.IsHiddenPath(e) {
+			hiddenN++
+		}
+	}
+	if showHidden {
+		return entries, hiddenN
+	}
+	visible = make([]string, 0, len(entries)-hiddenN)
+	for _, e := range entries {
+		if !cfg.IsHiddenPath(e) {
+			visible = append(visible, e)
+		}
+	}
+	return visible, hiddenN
+}
+
+// cmdToggleHidden toggles the hidden flag on the currently selected entry —
+// global/local by key, PATH by entry string — and persists it to config.
+func (u *ui) cmdToggleHidden() {
+	if u.sectionLen() == 0 {
+		return
+	}
+
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		u.msg = red("error: " + err.Error())
+		return
+	}
+
+	switch u.section {
+	case 0:
+		if u.cursor >= len(u.globals) {
+			return
+		}
+		r := u.globals[u.cursor]
+		cfg.SetHiddenGlobal(r.key, !cfg.IsHiddenGlobal(r.key))
+	case 1:
+		if u.cursor >= len(u.locals) {
+			return
+		}
+		r := u.locals[u.cursor]
+		cfg.SetHiddenLocal(r.key, !cfg.IsHiddenLocal(r.key))
+	case 2:
+		if u.cursor >= len(u.path) {
+			return
+		}
+		entry := u.path[u.cursor]
+		cfg.SetHiddenPath(entry, !cfg.IsHiddenPath(entry))
+	}
+
+	if err := store.SaveConfig(cfg); err != nil {
+		u.msg = red("error: " + err.Error())
+		return
+	}
+
+	_ = u.reload()
+	u.clampCursor()
+	u.msg = ""
 }
 
 func (u *ui) restore() {
@@ -649,6 +906,9 @@ func (u *ui) reenter() {
 }
 
 func (u *ui) sectionLen() int {
+	if u.collapsed[sectionName(u.section)] {
+		return 0
+	}
 	switch u.section {
 	case 0:
 		return len(u.globals)
@@ -810,6 +1070,45 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-3] + "..."
+}
+
+// truncateVisible returns s limited to at most max VISIBLE columns, ignoring
+// ANSI escape sequences (ESC [ ... final-byte) when counting. If it truncates,
+// it appends "…" and an ANSI reset. Escape sequences pass through intact and
+// are never cut mid-sequence.
+func truncateVisible(s string, max int) string {
+	var b strings.Builder
+	visible := 0
+	i := 0
+	for i < len(s) {
+		if s[i] == 0x1b {
+			b.WriteByte(s[i])
+			i++
+			if i < len(s) && s[i] == '[' {
+				b.WriteByte(s[i])
+				i++
+				for i < len(s) {
+					c := s[i]
+					b.WriteByte(c)
+					i++
+					if c >= 0x40 && c <= 0x7e {
+						break
+					}
+				}
+			}
+			continue
+		}
+		if visible >= max {
+			b.WriteString("…")
+			b.WriteString(ansiReset)
+			return b.String()
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		b.WriteRune(r)
+		i += size
+		visible++
+	}
+	return b.String()
 }
 
 func sortRows(rows []varRow) {
