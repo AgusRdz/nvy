@@ -27,6 +27,12 @@ const (
 	smtoAbortIfHung = 0x0002
 )
 
+// envSubkey is the HKCU subkey nvy reads and writes for global vars and PATH.
+// A var, not a const, so tests can point it at a throwaway key instead of the
+// user's real `Environment` — the registry writers must never touch a
+// developer's live environment when `go test` runs on Windows.
+var envSubkey = `Environment`
+
 // broadcastEnvChange tells running processes the environment block changed, so
 // newly spawned processes and GUI apps that listen for WM_SETTINGCHANGE pick up
 // registry-persisted global/PATH vars without a re-login. Best-effort: any
@@ -54,7 +60,7 @@ var current Platform = &windowsPlatform{}
 func Get() Platform { return current }
 
 func (p *windowsPlatform) ApplyGlobalVar(key, value string) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.SET_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, envSubkey, registry.SET_VALUE)
 	if err != nil {
 		return fmt.Errorf("open registry: %w", err)
 	}
@@ -67,7 +73,7 @@ func (p *windowsPlatform) ApplyGlobalVar(key, value string) error {
 }
 
 func (p *windowsPlatform) RemoveGlobalVar(key string) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.SET_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, envSubkey, registry.SET_VALUE)
 	if err != nil {
 		return fmt.Errorf("open registry: %w", err)
 	}
@@ -87,7 +93,7 @@ func (p *windowsPlatform) RemoveGlobalVar(key string) error {
 // which the path command owns. A value may be REG_SZ or REG_EXPAND_SZ;
 // GetStringValue handles both. Names of any other type are skipped.
 func (p *windowsPlatform) ExternalVars() (map[string]string, error) {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.QUERY_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, envSubkey, registry.QUERY_VALUE)
 	if err != nil {
 		return nil, fmt.Errorf("open registry: %w", err)
 	}
@@ -113,7 +119,7 @@ func (p *windowsPlatform) ExternalVars() (map[string]string, error) {
 }
 
 func (p *windowsPlatform) GetPath() ([]string, error) {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.QUERY_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, envSubkey, registry.QUERY_VALUE)
 	if err != nil {
 		return nil, fmt.Errorf("open registry: %w", err)
 	}
@@ -126,36 +132,36 @@ func (p *windowsPlatform) GetPath() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read PATH: %w", err)
 	}
+	return splitPathValue(val), nil
+}
 
+// splitPathValue splits a raw PATH registry value on ';', trimming whitespace
+// and dropping empty segments.
+func splitPathValue(val string) []string {
 	var entries []string
 	for _, e := range strings.Split(val, ";") {
 		if e = strings.TrimSpace(e); e != "" {
 			entries = append(entries, e)
 		}
 	}
-	return entries, nil
+	return entries
 }
 
-func (p *windowsPlatform) AddToPath(entry string) error {
-	entries, err := p.GetPath()
-	if err != nil {
-		return err
-	}
+// addPathEntry appends entry unless a case-insensitive match already exists
+// (Windows paths are case-insensitive), in which case it errors.
+func addPathEntry(entries []string, entry string) ([]string, error) {
 	for _, e := range entries {
 		if strings.EqualFold(e, entry) {
-			return fmt.Errorf("%s is already in PATH", entry)
+			return nil, fmt.Errorf("%s is already in PATH", entry)
 		}
 	}
-	entries = append(entries, entry)
-	return p.writePath(entries)
+	return append(entries, entry), nil
 }
 
-func (p *windowsPlatform) RemoveFromPath(entry string) error {
-	entries, err := p.GetPath()
-	if err != nil {
-		return err
-	}
-	filtered := entries[:0]
+// removePathEntry drops every case-insensitive match of entry, erroring if none
+// was present.
+func removePathEntry(entries []string, entry string) ([]string, error) {
+	filtered := make([]string, 0, len(entries))
 	found := false
 	for _, e := range entries {
 		if strings.EqualFold(e, entry) {
@@ -165,13 +171,37 @@ func (p *windowsPlatform) RemoveFromPath(entry string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("%s not found in PATH", entry)
+		return nil, fmt.Errorf("%s not found in PATH", entry)
 	}
-	return p.writePath(filtered)
+	return filtered, nil
+}
+
+func (p *windowsPlatform) AddToPath(entry string) error {
+	entries, err := p.GetPath()
+	if err != nil {
+		return err
+	}
+	updated, err := addPathEntry(entries, entry)
+	if err != nil {
+		return err
+	}
+	return p.writePath(updated)
+}
+
+func (p *windowsPlatform) RemoveFromPath(entry string) error {
+	entries, err := p.GetPath()
+	if err != nil {
+		return err
+	}
+	updated, err := removePathEntry(entries, entry)
+	if err != nil {
+		return err
+	}
+	return p.writePath(updated)
 }
 
 func (p *windowsPlatform) writePath(entries []string) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.SET_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, envSubkey, registry.SET_VALUE)
 	if err != nil {
 		return fmt.Errorf("open registry: %w", err)
 	}
