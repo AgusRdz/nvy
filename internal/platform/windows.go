@@ -8,11 +8,46 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
 type windowsPlatform struct{}
+
+var (
+	user32                 = windows.NewLazySystemDLL("user32.dll")
+	procSendMessageTimeout = user32.NewProc("SendMessageTimeoutW")
+)
+
+const (
+	hwndBroadcast   = 0xFFFF
+	wmSettingChange = 0x001A
+	smtoAbortIfHung = 0x0002
+)
+
+// broadcastEnvChange tells running processes the environment block changed, so
+// newly spawned processes and GUI apps that listen for WM_SETTINGCHANGE pick up
+// registry-persisted global/PATH vars without a re-login. Best-effort: any
+// failure is ignored — the registry write already succeeded, and this only
+// affects how fast the change propagates.
+func broadcastEnvChange() {
+	env, err := windows.UTF16PtrFromString("Environment")
+	if err != nil {
+		return
+	}
+	var result uintptr
+	procSendMessageTimeout.Call(
+		uintptr(hwndBroadcast),
+		uintptr(wmSettingChange),
+		0,
+		uintptr(unsafe.Pointer(env)),
+		uintptr(smtoAbortIfHung),
+		5000, // 5s timeout per window
+		uintptr(unsafe.Pointer(&result)),
+	)
+}
 
 var current Platform = &windowsPlatform{}
 
@@ -24,7 +59,11 @@ func (p *windowsPlatform) ApplyGlobalVar(key, value string) error {
 		return fmt.Errorf("open registry: %w", err)
 	}
 	defer k.Close()
-	return k.SetStringValue(key, value)
+	if err := k.SetStringValue(key, value); err != nil {
+		return err
+	}
+	broadcastEnvChange()
+	return nil
 }
 
 func (p *windowsPlatform) RemoveGlobalVar(key string) error {
@@ -37,7 +76,11 @@ func (p *windowsPlatform) RemoveGlobalVar(key string) error {
 	if err == registry.ErrNotExist {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	broadcastEnvChange()
+	return nil
 }
 
 // ExternalVars enumerates every value under HKCU\Environment except Path,
@@ -133,7 +176,11 @@ func (p *windowsPlatform) writePath(entries []string) error {
 		return fmt.Errorf("open registry: %w", err)
 	}
 	defer k.Close()
-	return k.SetExpandStringValue("Path", strings.Join(entries, ";"))
+	if err := k.SetExpandStringValue("Path", strings.Join(entries, ";")); err != nil {
+		return err
+	}
+	broadcastEnvChange()
+	return nil
 }
 
 const nvyHookMarker = "# nvy hook — do not edit"
