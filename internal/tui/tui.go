@@ -233,6 +233,9 @@ func Run() error {
 			case "x":
 				u.cmdExpiry()
 
+			case "t":
+				u.cmdNote()
+
 			case "y":
 				u.cmdCopy()
 
@@ -376,6 +379,7 @@ var helpGroups = []struct {
 		{"d", "delete selected"},
 		{"i", "import an external var"},
 		{"x", "set / change expiry"},
+		{"t", "set / edit note"},
 		{"y", "copy KEY=value to clipboard"},
 	}},
 	{"View", [][2]string{
@@ -968,6 +972,84 @@ func (u *ui) cmdExpiry() {
 
 	_ = u.reload()
 	u.msg = "updated expiry"
+}
+
+// cmdNote prompts for a free-text note on the selected variable and stores it
+// (blank clears it). Mirrors cmdExpiry: an external global is imported first so
+// it becomes managed, PATH has no notes.
+func (u *ui) cmdNote() {
+	switch u.section {
+	case 0:
+		if u.cursor >= len(u.globals) {
+			return
+		}
+		r := u.globals[u.cursor]
+		if r.external {
+			u.cmdImport()
+			for i, g := range u.globals {
+				if g.key == r.key {
+					u.cursor = i
+					r = g
+					break
+				}
+			}
+		}
+
+		clearScreen()
+		note, ok := u.promptLine(cyan("Note (blank to clear):") + dim("  (Esc cancels)") + " ")
+		if !ok {
+			u.msg = dim("cancelled")
+			return
+		}
+
+		gs, err := store.LoadGlobal()
+		if err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+		entry := gs[r.key]
+		entry.Note = note
+		entry.UpdatedAt = time.Now().UTC()
+		gs[r.key] = entry
+		if err := store.SaveGlobal(gs); err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+
+	case 1:
+		if u.cursor >= len(u.locals) {
+			return
+		}
+		r := u.locals[u.cursor]
+
+		clearScreen()
+		note, ok := u.promptLine(cyan("Note (blank to clear):") + dim("  (Esc cancels)") + " ")
+		if !ok {
+			u.msg = dim("cancelled")
+			return
+		}
+
+		meta, err := store.LoadLocalMeta(u.dir)
+		if err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+		m := meta[r.key]
+		m.Note = note
+		m.UpdatedAt = time.Now().UTC()
+		meta[r.key] = m
+		if err := store.SaveLocalMeta(u.dir, meta); err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+
+	case 2:
+		u.msg = dim("notes not applicable to PATH")
+		return
+	}
+
+	_ = u.reload()
+	u.msg = "updated note"
 }
 
 // cmdCopy copies the selected entry to the OS clipboard: KEY=VALUE (using the

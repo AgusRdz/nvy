@@ -203,7 +203,7 @@ nvy set API_TOKEN --global --expires 2026-12-31   # adopts external / updates ma
 nvy set API_TOKEN --global --expires none         # clear it
 ```
 
-In `nvy ui`, press `[x]` on a variable to set or clear its expiry (external vars are imported first). Keys are colored by urgency too — red once expired, yellow inside the lead-days window.
+In `nvy ui`, press `[x]` on a variable to set or clear its expiry, and `[t]` to set or clear its **note** (blank clears it) — external vars are imported first for both. The note shows in magenta brackets at the end of the row. Keys are colored by urgency too — red once expired, yellow inside the lead-days window.
 
 Notifications are on by default; turn them off without touching the scheduled task:
 
