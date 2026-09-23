@@ -8,6 +8,22 @@
 
 ---
 
+## Demo
+
+`nvy ui` in action — expiry-colored keys (red once expired, yellow when close), the `[?]` help overlay, and the `[c]` settings screen:
+
+<!--
+  The GIF is generated from demo.tape (see the Development section):
+
+      make demo        # or: vhs demo.tape   →   writes docs/demo.gif
+
+  Once docs/demo.gif exists, uncomment the line below to show it here:
+
+  ![nvy TUI demo](docs/demo.gif)
+-->
+
+---
+
 ## Why nvy
 
 - **Expiring tokens are invisible until they break.** A rotated PAT, a 90-day cloud key — you find out when a build fails. `nvy` tracks the expiry and fires a native desktop notification before it lapses. No offline CLI does this.
@@ -279,8 +295,11 @@ make build             # build for your platform (in container)
 make test              # go test ./...
 make cross             # build all targets (linux/darwin/windows × amd64/arm64)
 make install           # build + install to your platform's bin dir
+make demo              # render docs/demo.gif from demo.tape (needs vhs on the host)
 make release-patch     # tag + push the next patch version (fires the release workflow)
 ```
+
+The demo GIF is scripted in [`demo.tape`](demo.tape) and rendered with [vhs](https://github.com/charmbracelet/vhs) — `make demo` (or `vhs demo.tape`) runs a sandboxed `nvy ui` session in a throwaway temp dir and writes `docs/demo.gif`. It runs on the host, not in Docker, because vhs needs a PTY. Bump the hardcoded expiry dates in the tape to a few upcoming days first, so the red/yellow coloring shows.
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`: tests, cross-compile, checksums, Ed25519 signing, GitHub release with git-cliff notes, and build-provenance attestation.
 

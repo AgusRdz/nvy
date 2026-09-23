@@ -1,4 +1,4 @@
-.PHONY: build test clean cross dist install tidy release-patch release-minor release-major
+.PHONY: build test clean cross dist install tidy demo release-patch release-minor release-major
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
@@ -40,6 +40,13 @@ install:
 	@mkdir -p "$(INSTALL_DIR)"
 	cp $(BINARY) "$(INSTALL_DIR)/nvy$(EXT)"
 	@echo "installed nvy $(VERSION) ($(GOOS)/$(GOARCH)) to $(INSTALL_DIR)/nvy$(EXT)"
+
+# Render the TUI demo GIF (docs/demo.gif) from demo.tape. Runs on the HOST,
+# not in Docker — vhs needs a PTY. Requires `vhs` and `nvy` on PATH:
+#   https://github.com/charmbracelet/vhs
+demo:
+	vhs demo.tape
+	@echo "wrote docs/demo.gif"
 
 # --- Release helpers ---
 CURRENT_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
