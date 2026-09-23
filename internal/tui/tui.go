@@ -79,6 +79,10 @@ type ui struct {
 	// the SETTINGS view; settingsCursor is the focused field (0..4).
 	settings       bool
 	settingsCursor int
+
+	// help overlay: [?] toggle. When true, render()/the key loop switch to the
+	// HELP view (full key reference); any of ?/esc/q dismisses it.
+	help bool
 }
 
 // collapsedSectionOrder is the canonical section order used when persisting
@@ -185,6 +189,14 @@ func Run() error {
 				continue
 			}
 
+			if u.help {
+				switch key {
+				case "?", "esc", "q", "ctrl+c":
+					u.help = false
+				}
+				continue
+			}
+
 			switch key {
 			case "q", "ctrl+c":
 				return nil
@@ -248,6 +260,9 @@ func Run() error {
 				}
 				u.settings = true
 				u.settingsCursor = 0
+
+			case "?":
+				u.help = true
 			}
 
 		case <-resize:
@@ -274,21 +289,27 @@ func (u *ui) render() {
 	u.writeLine(&sb, bold("nvy")+dim(" — environment variable manager"))
 	sb.WriteString(dim(strings.Repeat("─", min(u.width, 80))) + "\n\n")
 
-	if u.settings {
+	switch {
+	case u.settings:
 		u.renderSettings(&sb)
-	} else {
+	case u.help:
+		u.renderHelp(&sb)
+	default:
 		u.writeSection(&sb, 0, "GLOBAL VARS", u.renderGlobalRows(), u.globalHiddenN)
 		u.writeSection(&sb, 1, "LOCAL VARS  "+dim("(.env)"), u.renderLocalRows(), u.localHiddenN)
 		u.writePathSection(&sb)
 	}
 
 	sb.WriteString(dim(strings.Repeat("─", min(u.width, 80))) + "\n")
-	if u.msg != "" {
+	if u.msg != "" && !u.help {
 		u.writeLine(&sb, "  "+u.msg)
 	}
-	if u.settings {
+	switch {
+	case u.settings:
 		u.writeSettingsFooter(&sb)
-	} else {
+	case u.help:
+		u.writeHelpFooter(&sb)
+	default:
 		u.writeFooter(&sb)
 	}
 
@@ -338,13 +359,71 @@ func (u *ui) writeSettingsFooter(sb *strings.Builder) {
 	u.writeLine(sb, "  "+line)
 }
 
-// writeFooter lays out the hotkey hints, flowing them onto as many lines as
-// the terminal width allows so no item is ever cut mid-label.
+// helpGroups is the full key reference shown by the HELP overlay, grouped so
+// the footer only has to carry the essentials.
+var helpGroups = []struct {
+	title string
+	keys  [][2]string // {key(s), description}
+}{
+	{"Navigate", [][2]string{
+		{"↑ ↓", "move within a section"},
+		{"← →", "switch section (Tab / Shift-Tab)"},
+		{"⏎", "fold / unfold the current section"},
+	}},
+	{"Edit", [][2]string{
+		{"n", "new variable"},
+		{"e", "edit selected"},
+		{"d", "delete selected"},
+		{"i", "import an external var"},
+		{"x", "set / change expiry"},
+		{"y", "copy KEY=value to clipboard"},
+	}},
+	{"View", [][2]string{
+		{"h", "hide selected entry"},
+		{"H", "show hidden entries (toggle)"},
+		{"c", "settings"},
+	}},
+	{"Other", [][2]string{
+		{"?", "toggle this help"},
+		{"q", "quit"},
+	}},
+}
+
+// renderHelp draws the HELP overlay: the full key reference grouped by category,
+// so the list-view footer can stay down to the essentials.
+func (u *ui) renderHelp(sb *strings.Builder) {
+	u.writeLine(sb, cyan(bold("  HELP")))
+	sb.WriteString("\n")
+	for _, g := range helpGroups {
+		u.writeLine(sb, "  "+bold(g.title))
+		for _, k := range g.keys {
+			u.writeLine(sb, "    "+cyan(padVisible("["+k[0]+"]", 8))+" "+dim(k[1]))
+		}
+		sb.WriteString("\n")
+	}
+}
+
+// writeHelpFooter renders the help overlay's hotkey hint.
+func (u *ui) writeHelpFooter(sb *strings.Builder) {
+	u.writeLine(sb, "  "+footerItem("?/esc", "back"))
+}
+
+// padVisible right-pads s with spaces to width visible columns (runes, not
+// bytes — the key column holds multi-byte glyphs like ⏎).
+func padVisible(s string, width int) string {
+	if n := utf8.RuneCountInString(s); n < width {
+		return s + strings.Repeat(" ", width-n)
+	}
+	return s
+}
+
+// writeFooter lays out the essential hotkey hints, flowing them onto as many
+// lines as the terminal width allows so no item is ever cut mid-label. The full
+// key reference lives behind [?] help so the footer stays uncluttered.
 func (u *ui) writeFooter(sb *strings.Builder) {
 	items := []struct{ key, label string }{
-		{"←→", "section"}, {"↑↓", "navigate"}, {"n", "new"}, {"e", "edit"},
-		{"d", "delete"}, {"i", "import"}, {"x", "expiry"}, {"y", "copy"}, {"h", "hide"},
-		{"H", "show-hidden"}, {"⏎", "fold"}, {"c", "config"}, {"q", "quit"},
+		{"↑↓", "navigate"}, {"←→", "section"}, {"n", "new"}, {"e", "edit"},
+		{"?", "help"}, {"q", "quit"},
 	}
 	const indent = "  "
 	const gap = 2 // visible width of the "  " separator between items
