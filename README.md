@@ -13,14 +13,35 @@
 `nvy ui` in action — expiry-colored keys (red once expired, yellow when close), the `[?]` help overlay, and the `[c]` settings screen:
 
 <!--
-  The GIF is generated from demo.tape (see the Development section):
+  A recorded GIF is generated from demo.tape (see the Development section):
 
       make demo        # or: vhs demo.tape   →   writes docs/demo.gif
 
-  Once docs/demo.gif exists, uncomment the line below to show it here:
+  Once docs/demo.gif exists, uncomment the line below (and drop the static
+  mock underneath it if you prefer):
 
   ![nvy TUI demo](docs/demo.gif)
 -->
+
+```text
+  nvy — environment variable manager
+  ──────────────────────────────────────────────────────────────
+    GLOBAL VARS
+    ▸ AWS_SESSION_TOKEN    updated 2026-09-21   ⚠ expires in 3 days   [prod sso]
+      API_URL              updated 2026-09-19
+      GH_TOKEN             AbCd••••   (external, read-only)
+
+    LOCAL VARS  (.env)
+      DATABASE_URL         updated today
+      OLD_TOKEN            ✗ expired 2026-09-18                       [rotate me]
+      STRIPE_KEY           updated today   expires 2027-03-01
+
+    PATH  (12)   ⏎ to expand
+  ──────────────────────────────────────────────────────────────
+    [↑↓] navigate   [←→] section   [n] new   [e] edit   [?] help   [q] quit
+```
+
+> Colors don't show in a code block — `AWS_SESSION_TOKEN` renders yellow (expiring soon), `OLD_TOKEN` red (expired). Press `[?]` for the full key reference.
 
 ---
 
