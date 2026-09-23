@@ -76,5 +76,16 @@ func runInit(_ *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Shell completion — best-effort, never fails init.
+	installed, err := installCompletion()
+	switch {
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "nvy: warning: could not install shell completion: %v\n", err)
+	case installed:
+		fmt.Println("nvy: shell completion installed (restart your shell or re-source your profile)")
+	default:
+		fmt.Println("nvy: shell completion already installed")
+	}
+
 	return nil
 }

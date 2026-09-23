@@ -9,10 +9,11 @@ import (
 )
 
 var getCmd = &cobra.Command{
-	Use:   "get KEY",
-	Short: "Get an environment variable value",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runGet,
+	Use:               "get KEY",
+	Short:             "Get an environment variable value",
+	Args:              cobra.ExactArgs(1),
+	RunE:              runGet,
+	ValidArgsFunction: completeFirstArgFunc(completeVarNames),
 }
 
 var (

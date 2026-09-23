@@ -15,6 +15,9 @@ var importCmd = &cobra.Command{
 	Use:   "import [KEY...]",
 	Short: "Adopt external OS env vars into nvy's global store",
 	RunE:  runImport,
+	ValidArgsFunction: func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return completeExternalNames(toComplete), cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 var importAll bool

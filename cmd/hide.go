@@ -8,17 +8,19 @@ import (
 )
 
 var hideCmd = &cobra.Command{
-	Use:   "hide <name>",
-	Short: "Hide an entry from the default `list`/`ui` view",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runHide,
+	Use:               "hide <name>",
+	Short:             "Hide an entry from the default `list`/`ui` view",
+	Args:              cobra.ExactArgs(1),
+	RunE:              runHide,
+	ValidArgsFunction: completeFirstArgFunc(completeVarNames),
 }
 
 var unhideCmd = &cobra.Command{
-	Use:   "unhide <name>",
-	Short: "Reveal a previously hidden entry",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runUnhide,
+	Use:               "unhide <name>",
+	Short:             "Reveal a previously hidden entry",
+	Args:              cobra.ExactArgs(1),
+	RunE:              runUnhide,
+	ValidArgsFunction: completeFirstArgFunc(completeVarNames),
 }
 
 var (

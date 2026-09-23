@@ -11,11 +11,12 @@ import (
 )
 
 var removeCmd = &cobra.Command{
-	Use:     "remove KEY",
-	Aliases: []string{"rm"},
-	Short:   "Remove an environment variable",
-	Args:    cobra.ExactArgs(1),
-	RunE:    runRemove,
+	Use:               "remove KEY",
+	Aliases:           []string{"rm"},
+	Short:             "Remove an environment variable",
+	Args:              cobra.ExactArgs(1),
+	RunE:              runRemove,
+	ValidArgsFunction: completeFirstArgFunc(completeVarNames),
 }
 
 var (

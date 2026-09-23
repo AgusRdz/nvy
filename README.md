@@ -115,7 +115,7 @@ nvy remove API_URL                     # delete
 ## Commands
 
 ```
-nvy init                       Install the shell hook + register the expiration check schedule
+nvy init                       Install the shell hook, shell completions, + register the expiration check schedule
 nvy set KEY[=value] [flags]    Set a variable, or (bare KEY) stamp its expiry/note
 nvy get KEY [--global|--local] Print a variable's value
 nvy remove KEY [scope]         Delete a variable
@@ -134,7 +134,7 @@ nvy config [set|edit]          Show or change nvy settings
 nvy doctor                     Diagnose the install (hook, task, PATH, store, .gitignore)
 nvy update                     Self-update to the latest signed release
 nvy auto-update on|off         Toggle background auto-updates (off by default)
-nvy uninstall [--keep-data]    Remove the hook, background task, data, and binary
+nvy uninstall [--keep-data]    Remove the hook, completions, background task, data, and binary
 nvy version                    Print the version
 ```
 
@@ -149,6 +149,8 @@ Tag any variable with an expiry:
 ```bash
 nvy set AWS_SESSION_TOKEN=... --global --expires 2026-10-01 --note "prod sso"
 ```
+
+`nvy init` also generates shell completions (PowerShell, bash, or zsh, detected automatically) under `~/.nvy` and wires them into your profile — nothing to run or source by hand, and `KEY` arguments to `get`/`remove`/`hide`/`unhide`/`import` tab-complete against your actual variables.
 
 `nvy init` registers a background task (Task Scheduler on Windows, launchd on macOS, cron on Linux) that runs `nvy check` about **every 4 hours** — plus at login and with catch-up-after-downtime on macOS/Linux (those extra triggers need admin on Windows, so it stays every-4h there). Re-run `nvy init` after upgrading `nvy` to pick up schedule changes. It raises a native desktop notification for anything expired or expiring soon: "expires today", "expires tomorrow", "expires in N days", or "has already expired" once past due — at most **once per calendar day per variable**, so the frequent schedule doesn't re-toast the same var. `nvy list` flags them inline:
 
