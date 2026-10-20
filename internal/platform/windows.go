@@ -249,11 +249,13 @@ func (p *windowsPlatform) ShellConfigPath() string {
 // ScheduledTasks CIM cmdlets and XML-with-logon-triggers all require admin
 // (Access Denied otherwise). An every-4h cadence means a check runs at least
 // that often whenever the machine is on; logon/catch-up triggers are a
-// Unix-only extra (they'd need admin here).
+// Unix-only extra (they'd need admin here). nvy is a console binary, so the
+// task runs it under a headless conhost — otherwise every check flashes a
+// console window on the user's desktop.
 func (p *windowsPlatform) RegisterBackgroundTask(binaryPath string) error {
 	cmd := exec.Command("schtasks", "/Create",
 		"/TN", "nvy-check",
-		"/TR", `"`+binaryPath+`" check`,
+		"/TR", `conhost.exe --headless "`+binaryPath+`" check`,
 		"/SC", "HOURLY",
 		"/MO", "4",
 		"/F",
