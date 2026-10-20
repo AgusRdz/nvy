@@ -7,10 +7,9 @@ import (
 	"strings"
 
 	"github.com/AgusRdz/nvy/internal/platform"
+	"github.com/AgusRdz/nvy/internal/store"
 	"github.com/spf13/cobra"
 )
-
-
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -85,12 +84,16 @@ func runInit(_ *cobra.Command, _ []string) error {
 	// already installed — this is what lets an upgraded binary apply a newer
 	// schedule. Registration is idempotent (Register-ScheduledTask -Force,
 	// cron/launchd replace their tagged entries).
+	cfg, cfgErr := store.LoadConfig()
+	if cfgErr != nil {
+		fmt.Fprintf(os.Stderr, "nvy: warning: %v (using default check interval)\n", cfgErr)
+	}
 	binary, err := os.Executable()
 	if err == nil {
-		if err := p.RegisterBackgroundTask(binary); err != nil {
+		if err := p.RegisterBackgroundTask(binary, cfg.CheckInterval()); err != nil {
 			fmt.Fprintf(os.Stderr, "nvy: warning: could not register background task: %v\n", err)
 		} else {
-			fmt.Println("nvy: expiration check scheduled (every ~4h)")
+			fmt.Printf("nvy: expiration check scheduled (every ~%dh)\n", cfg.CheckInterval())
 		}
 	}
 

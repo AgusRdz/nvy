@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unsafe"
 
@@ -244,22 +245,30 @@ func (p *windowsPlatform) ShellConfigPath() string {
 	return filepath.Join(profile, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1")
 }
 
-// RegisterBackgroundTask registers TN "nvy-check" to run "nvy check" every 4
-// hours. It uses basic schtasks, which works WITHOUT elevation — the richer
-// ScheduledTasks CIM cmdlets and XML-with-logon-triggers all require admin
-// (Access Denied otherwise). An every-4h cadence means a check runs at least
-// that often whenever the machine is on; logon/catch-up triggers are a
+// schtasksScheduleArgs returns the schtasks schedule flags for an interval in
+// hours; 24 maps to DAILY because HOURLY /MO is capped at 23.
+func schtasksScheduleArgs(intervalHours int) []string {
+	if intervalHours >= 24 {
+		return []string{"/SC", "DAILY"}
+	}
+	return []string{"/SC", "HOURLY", "/MO", strconv.Itoa(intervalHours)}
+}
+
+// RegisterBackgroundTask registers TN "nvy-check" to run "nvy check" every
+// intervalHours hours. It uses basic schtasks, which works WITHOUT elevation —
+// the richer ScheduledTasks CIM cmdlets and XML-with-logon-triggers all
+// require admin (Access Denied otherwise). The interval guarantees a check at
+// least that often whenever the machine is on; logon/catch-up triggers are a
 // Unix-only extra (they'd need admin here). nvy is a console binary, so the
 // task runs it under a headless conhost — otherwise every check flashes a
 // console window on the user's desktop.
-func (p *windowsPlatform) RegisterBackgroundTask(binaryPath string) error {
-	cmd := exec.Command("schtasks", "/Create",
+func (p *windowsPlatform) RegisterBackgroundTask(binaryPath string, intervalHours int) error {
+	args := append([]string{"/Create",
 		"/TN", "nvy-check",
-		"/TR", `conhost.exe --headless "`+binaryPath+`" check`,
-		"/SC", "HOURLY",
-		"/MO", "4",
-		"/F",
-	)
+		"/TR", `conhost.exe --headless "` + binaryPath + `" check`,
+	}, schtasksScheduleArgs(intervalHours)...)
+	args = append(args, "/F")
+	cmd := exec.Command("schtasks", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("nvy: register scheduled task: %w — %s", err, string(out))

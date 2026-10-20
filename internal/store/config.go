@@ -15,12 +15,41 @@ type Config struct {
 	HiddenPath           []string `json:"hidden_path,omitempty"`
 	CollapsedSections    []string `json:"collapsed_sections,omitempty"`
 	NotificationsEnabled *bool    `json:"notifications_enabled,omitempty"`
+	CheckIntervalHours   int      `json:"check_interval_hours,omitempty"`
 }
 
 // NotificationsOn reports whether notifications are enabled. Nil (unset)
 // defaults to on.
 func (c *Config) NotificationsOn() bool {
 	return c.NotificationsEnabled == nil || *c.NotificationsEnabled
+}
+
+// DefaultCheckIntervalHours is the background-check cadence when unset.
+const DefaultCheckIntervalHours = 4
+
+// AllowedCheckIntervalHours lists the valid background-check intervals. Each
+// divides 24 so cron spacing is even on every platform.
+var AllowedCheckIntervalHours = []int{1, 2, 3, 4, 6, 8, 12, 24}
+
+// ValidateCheckIntervalHours returns an error unless n is an allowed interval.
+func ValidateCheckIntervalHours(n int) error {
+	for _, a := range AllowedCheckIntervalHours {
+		if a == n {
+			return nil
+		}
+	}
+	return fmt.Errorf("check-interval-hours must be one of 1, 2, 3, 4, 6, 8, 12, 24 (got %d)", n)
+}
+
+// CheckInterval returns the effective background-check interval in hours.
+// Zero (unset) defaults to DefaultCheckIntervalHours.
+func (c *Config) CheckInterval() int {
+	// A hand-edited config.json bypasses `nvy config set` validation; an
+	// out-of-set value would produce an unevenly spaced or invalid cron entry.
+	if ValidateCheckIntervalHours(c.CheckIntervalHours) != nil {
+		return DefaultCheckIntervalHours
+	}
+	return c.CheckIntervalHours
 }
 
 // IsHiddenGlobal reports whether key is marked hidden in the global scope.

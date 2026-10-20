@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -172,14 +173,32 @@ func (p *unixPlatform) ShellConfigPath() string {
 	return filepath.Join(home, ".bashrc")
 }
 
-func (p *unixPlatform) RegisterBackgroundTask(binaryPath string) error {
+func (p *unixPlatform) RegisterBackgroundTask(binaryPath string, intervalHours int) error {
 	if runtime.GOOS == "darwin" {
-		return registerLaunchd(binaryPath)
+		return registerLaunchd(binaryPath, intervalHours)
 	}
-	return registerCron(binaryPath)
+	return registerCron(binaryPath, intervalHours)
 }
 
-func registerLaunchd(binaryPath string) error {
+// launchdStartInterval returns the plist StartInterval (seconds) for an
+// interval in hours.
+func launchdStartInterval(intervalHours int) int { return intervalHours * 3600 }
+
+// cronLines returns the tagged crontab lines: @reboot plus the repeat line.
+// 24h uses "0 0 * * *" since "*/24" in the hour field only fires at hour 0
+// on some crons and is rejected by others.
+func cronLines(binaryPath string, intervalHours int) []string {
+	schedule := "0 0 * * *"
+	if intervalHours < 24 {
+		schedule = "0 */" + strconv.Itoa(intervalHours) + " * * *"
+	}
+	return []string{
+		"@reboot " + binaryPath + " check  # nvy-check",
+		schedule + " " + binaryPath + " check  # nvy-check",
+	}
+}
+
+func registerLaunchd(binaryPath string, intervalHours int) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -190,7 +209,7 @@ func registerLaunchd(binaryPath string) error {
 	}
 
 	plistPath := filepath.Join(dir, "run.nvy.check.plist")
-	// StartInterval fires every 4h; RunAtLoad covers at-logon/load. launchd
+	// StartInterval fires every intervalHours; RunAtLoad covers at-logon/load. launchd
 	// runs a missed StartInterval job on wake, giving catch-up for free.
 	plist := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -203,7 +222,7 @@ func registerLaunchd(binaryPath string) error {
         <string>check</string>
     </array>
     <key>RunAtLoad</key><true/>
-    <key>StartInterval</key><integer>14400</integer>
+    <key>StartInterval</key><integer>` + strconv.Itoa(launchdStartInterval(intervalHours)) + `</integer>
 </dict>
 </plist>
 `
@@ -222,10 +241,10 @@ func registerLaunchd(binaryPath string) error {
 }
 
 // registerCron installs two tagged lines: @reboot for at-logon/boot, and an
-// every-4h line for the repeat. cron has no native run-if-missed, so
-// @reboot + every-4h is the closest approximation to catch-up. Re-running
+// every-N-hours line for the repeat. cron has no native run-if-missed, so
+// @reboot + every-N-hours is the closest approximation to catch-up. Re-running
 // this replaces any existing "# nvy-check" lines, making it idempotent.
-func registerCron(binaryPath string) error {
+func registerCron(binaryPath string, intervalHours int) error {
 	out, _ := exec.Command("crontab", "-l").Output()
 	existing := string(out)
 
@@ -237,10 +256,7 @@ func registerCron(binaryPath string) error {
 		kept = append(kept, l)
 	}
 
-	kept = append(kept,
-		"@reboot "+binaryPath+" check  # nvy-check",
-		"0 */4 * * * "+binaryPath+" check  # nvy-check",
-	)
+	kept = append(kept, cronLines(binaryPath, intervalHours)...)
 
 	result := strings.Join(kept, "\n") + "\n"
 	cmd := exec.Command("crontab", "-")

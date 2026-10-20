@@ -52,3 +52,33 @@ func TestFilterExternalUnix(t *testing.T) {
 		t.Errorf("filterExternalUnix() = %v, want %v", got, want)
 	}
 }
+
+func TestCronLines(t *testing.T) {
+	cases := []struct {
+		hours int
+		want  string
+	}{
+		{1, "0 */1 * * * /bin/nvy check  # nvy-check"},
+		{4, "0 */4 * * * /bin/nvy check  # nvy-check"},
+		{12, "0 */12 * * * /bin/nvy check  # nvy-check"},
+		{24, "0 0 * * * /bin/nvy check  # nvy-check"},
+	}
+	for _, c := range cases {
+		got := cronLines("/bin/nvy", c.hours)
+		want := []string{"@reboot /bin/nvy check  # nvy-check", c.want}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("cronLines(%d) = %q, want %q", c.hours, got, want)
+		}
+	}
+}
+
+func TestLaunchdStartInterval(t *testing.T) {
+	cases := []struct{ hours, want int }{
+		{1, 3600}, {4, 14400}, {24, 86400},
+	}
+	for _, c := range cases {
+		if got := launchdStartInterval(c.hours); got != c.want {
+			t.Errorf("launchdStartInterval(%d) = %d, want %d", c.hours, got, c.want)
+		}
+	}
+}

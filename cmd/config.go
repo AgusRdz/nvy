@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/AgusRdz/nvy/internal/platform"
 	"github.com/AgusRdz/nvy/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -46,6 +47,7 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 	fmt.Printf("config file: %s\n", path)
 	fmt.Printf("notification-lead-days = %d\n", cfg.NotificationLeadDays)
 	fmt.Printf("notifications-enabled = %s\n", onOff(cfg.NotificationsOn()))
+	fmt.Printf("check-interval-hours = %d\n", cfg.CheckInterval())
 	fmt.Printf("collapsed-sections = %s\n", formatCollapsedSections(cfg.CollapsedSections))
 	return nil
 }
@@ -88,6 +90,15 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 		}
 		cfg.NotificationsEnabled = &b
 		display = onOff(b)
+	case "check-interval-hours":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("nvy: check-interval-hours must be an integer: %w", err)
+		}
+		if err := store.ValidateCheckIntervalHours(n); err != nil {
+			return fmt.Errorf("nvy: %w", err)
+		}
+		cfg.CheckIntervalHours = n
 	default:
 		return fmt.Errorf("nvy: unknown config key %q", key)
 	}
@@ -97,6 +108,33 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("nvy: set %s = %s\n", key, display)
+
+	if key == "check-interval-hours" {
+		return applyCheckInterval(cfg.CheckInterval())
+	}
+	return nil
+}
+
+// applyCheckInterval re-registers the background task with the new interval
+// so the change takes effect without re-running `nvy init`. A task that isn't
+// installed is left alone.
+func applyCheckInterval(hours int) error {
+	p := platform.Get()
+	installed, err := p.BackgroundTaskInstalled()
+	if err != nil {
+		return fmt.Errorf("nvy: could not check background task: %w", err)
+	}
+	if !installed {
+		return nil
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("nvy: locate nvy binary: %w", err)
+	}
+	if err := p.RegisterBackgroundTask(binary, hours); err != nil {
+		return err
+	}
+	fmt.Printf("nvy: background check rescheduled (every ~%dh)\n", hours)
 	return nil
 }
 

@@ -21,7 +21,9 @@ type Platform interface {
 	GetPath() ([]string, error)
 	ShellHookScript() string
 	ShellConfigPath() string
-	RegisterBackgroundTask(binaryPath string) error
+	// RegisterBackgroundTask (re-)registers the "nvy check" task to run every
+	// intervalHours hours (1, 2, 3, 4, 6, 8, 12 or 24).
+	RegisterBackgroundTask(binaryPath string, intervalHours int) error
 
 	// BackgroundTaskInstalled reports whether the daily expiration-check
 	// background task is currently registered.

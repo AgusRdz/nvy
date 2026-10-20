@@ -189,7 +189,7 @@ nvy set AWS_SESSION_TOKEN=... --global --expires 2026-10-01 --note "prod sso"
 
 `nvy init` also generates shell completions (PowerShell, bash, or zsh, detected automatically) under `~/.nvy` and wires them into your profile — nothing to run or source by hand, and `KEY` arguments to `get`/`remove`/`hide`/`unhide`/`import` tab-complete against your actual variables.
 
-`nvy init` registers a background task (Task Scheduler on Windows, launchd on macOS, cron on Linux) that runs `nvy check` about **every 4 hours** — plus at login and with catch-up-after-downtime on macOS/Linux (those extra triggers need admin on Windows, so it stays every-4h there). Re-run `nvy init` after upgrading `nvy` to pick up schedule changes. It raises a native desktop notification for anything expired or expiring soon: "expires today", "expires tomorrow", "expires in N days", or "has already expired" once past due — at most **once per calendar day per variable**, so the frequent schedule doesn't re-toast the same var. `nvy list` flags them inline:
+`nvy init` registers a background task (Task Scheduler on Windows, launchd on macOS, cron on Linux) that runs `nvy check` about **every 4 hours by default** (`nvy config set check-interval-hours N`; N is 1, 2, 3, 4, 6, 8, 12 or 24) — plus at login and with catch-up-after-downtime on macOS/Linux (those extra triggers need admin on Windows, so it stays interval-only there). Re-run `nvy init` after upgrading `nvy` to pick up schedule changes. It raises a native desktop notification for anything expired or expiring soon: "expires today", "expires tomorrow", "expires in N days", or "has already expired" once past due — at most **once per calendar day per variable**, so the frequent schedule doesn't re-toast the same var. `nvy list` flags them inline:
 
 ```
 GLOBAL
@@ -210,6 +210,7 @@ Notifications are on by default; turn them off without touching the scheduled ta
 ```bash
 nvy config set notifications-enabled false
 nvy config set notifications-enabled true
+nvy config set check-interval-hours 2   # background check cadence; re-registers the task immediately
 ```
 
 With them off, `nvy check` prints `nvy: notifications disabled` and exits cleanly — no toast/notify call is made. The `nvy ui` settings screen (`[c]`) has the same toggle on its `Notifications` field (`space`/`enter`/`←`/`→`).

@@ -182,3 +182,20 @@ func TestPathRoundTrip(t *testing.T) {
 		t.Error("expected error removing absent PATH entry")
 	}
 }
+
+func TestSchtasksScheduleArgs(t *testing.T) {
+	cases := []struct {
+		hours int
+		want  []string
+	}{
+		{1, []string{"/SC", "HOURLY", "/MO", "1"}},
+		{4, []string{"/SC", "HOURLY", "/MO", "4"}},
+		{12, []string{"/SC", "HOURLY", "/MO", "12"}},
+		{24, []string{"/SC", "DAILY"}},
+	}
+	for _, c := range cases {
+		if got := schtasksScheduleArgs(c.hours); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("schtasksScheduleArgs(%d) = %v, want %v", c.hours, got, c.want)
+		}
+	}
+}
