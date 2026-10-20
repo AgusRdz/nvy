@@ -143,17 +143,23 @@ func (p *unixPlatform) RemoveFromPath(entry string) error {
 const nvyHookMarker = "# nvy hook — do not edit"
 const nvyHookEndMarker = "# nvy hook end"
 
+// ShellHookScript evals `nvy export` on every prompt rather than sourcing
+// .env directly: .env is data, not shell code, so nvy parses it and emits
+// quoted assignments (and unsets vars when you leave the directory).
 func (p *unixPlatform) ShellHookScript() string {
+	if strings.Contains(os.Getenv("SHELL"), "zsh") {
+		return nvyHookMarker + `
+_nvy_hook() { eval "$(nvy export zsh 2>/dev/null)"; }
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _nvy_hook
+` + nvyHookEndMarker + "\n"
+	}
 	return nvyHookMarker + `
-_nvy_hook() {
-    if [ -f ".env" ]; then
-        set -a
-        source .env
-        set +a
-    fi
-}
-cd() { builtin cd "$@" && _nvy_hook; }
-_nvy_hook
+_nvy_hook() { eval "$(nvy export bash 2>/dev/null)"; }
+case ";${PROMPT_COMMAND};" in
+    *";_nvy_hook;"*) ;;
+    *) PROMPT_COMMAND="_nvy_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+esac
 ` + nvyHookEndMarker + "\n"
 }
 

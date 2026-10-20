@@ -36,6 +36,20 @@ func runInit(_ *cobra.Command, _ []string) error {
 	}
 	content := string(data)
 
+	// Replace a hook block from an older nvy (e.g. the Unix hook that sourced
+	// .env as shell code) so re-running init upgrades it.
+	outdated := strings.Contains(content, "# nvy hook") && !strings.Contains(content, hookScript)
+	if outdated {
+		if _, err := removeHookBlock(configPath); err != nil {
+			return err
+		}
+		data, err = os.ReadFile(configPath)
+		if err != nil {
+			return fmt.Errorf("nvy: read %s: %w", configPath, err)
+		}
+		content = string(data)
+	}
+
 	if strings.Contains(content, "# nvy hook") {
 		fmt.Printf("nvy: hook already installed in %s\n", configPath)
 	} else {
@@ -59,7 +73,11 @@ func runInit(_ *cobra.Command, _ []string) error {
 			return fmt.Errorf("nvy: write %s: %w", configPath, err)
 		}
 
-		fmt.Printf("nvy: hook installed in %s\n", configPath)
+		if outdated {
+			fmt.Printf("nvy: hook updated in %s (previous version backed up to %s.nvy.bak)\n", configPath, configPath)
+		} else {
+			fmt.Printf("nvy: hook installed in %s\n", configPath)
+		}
 		fmt.Printf("     restart your shell or run: source %s\n", configPath)
 	}
 

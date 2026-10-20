@@ -21,7 +21,7 @@ var exportCmd = &cobra.Command{
 func runExport(_ *cobra.Command, args []string) error {
 	shell := args[0]
 
-	if shell != "powershell" {
+	if shell != "powershell" && shell != "bash" && shell != "zsh" {
 		fmt.Printf("# nvy: export for %s not yet implemented\n", shell)
 		return nil
 	}
@@ -50,7 +50,11 @@ func runExport(_ *cobra.Command, args []string) error {
 
 	prevApplied := splitApplied(os.Getenv("NVY_APPLIED"))
 
-	fmt.Print(renderPowershellExport(desired, prevApplied))
+	if shell == "powershell" {
+		fmt.Print(renderPowershellExport(desired, prevApplied))
+	} else {
+		fmt.Print(renderPosixExport(desired, prevApplied))
+	}
 	return nil
 }
 
@@ -110,4 +114,45 @@ func renderPowershellExport(desired map[string]string, prevApplied []string) str
 
 func psQuote(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
+}
+
+// renderPosixExport is the bash/zsh counterpart of renderPowershellExport.
+// Values are single-quoted so the shell never interprets them.
+func renderPosixExport(desired map[string]string, prevApplied []string) string {
+	var sb strings.Builder
+
+	keys := make([]string, 0, len(desired))
+	for k := range desired {
+		if k == "NVY_APPLIED" || !safeEnvKey.MatchString(k) {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	desiredSet := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		desiredSet[k] = true
+		sb.WriteString(fmt.Sprintf("export %s='%s'\n", k, shQuote(desired[k])))
+	}
+
+	prevKeys := make([]string, len(prevApplied))
+	copy(prevKeys, prevApplied)
+	sort.Strings(prevKeys)
+	for _, k := range prevKeys {
+		if k == "NVY_APPLIED" || !safeEnvKey.MatchString(k) {
+			continue
+		}
+		if !desiredSet[k] {
+			sb.WriteString(fmt.Sprintf("unset %s\n", k))
+		}
+	}
+
+	sb.WriteString(fmt.Sprintf("export NVY_APPLIED='%s'\n", shQuote(strings.Join(keys, ","))))
+
+	return sb.String()
+}
+
+func shQuote(s string) string {
+	return strings.ReplaceAll(s, "'", `'\''`)
 }
