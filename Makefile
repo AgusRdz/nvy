@@ -57,17 +57,17 @@ PATCH := $(shell echo $(CURRENT_TAG) | sed 's/^v//' | cut -d. -f3)
 release-patch:
 	@NEXT=v$(MAJOR).$(MINOR).$(shell echo $$(($(PATCH)+1))); \
 	echo "$(CURRENT_TAG) -> $$NEXT"; \
-	git tag $$NEXT && git push origin $$NEXT && echo "released $$NEXT"
+	git tag -m "$$NEXT" $$NEXT && git push origin $$NEXT && echo "released $$NEXT"
 
 release-minor:
 	@NEXT=v$(MAJOR).$(shell echo $$(($(MINOR)+1))).0; \
 	echo "$(CURRENT_TAG) -> $$NEXT"; \
-	git tag $$NEXT && git push origin $$NEXT && echo "released $$NEXT"
+	git tag -m "$$NEXT" $$NEXT && git push origin $$NEXT && echo "released $$NEXT"
 
 release-major:
 	@NEXT=v$(shell echo $$(($(MAJOR)+1))).0.0; \
 	echo "$(CURRENT_TAG) -> $$NEXT"; \
-	git tag $$NEXT && git push origin $$NEXT && echo "released $$NEXT"
+	git tag -m "$$NEXT" $$NEXT && git push origin $$NEXT && echo "released $$NEXT"
 
 dist: cross
 	docker compose run --rm dev sh -c "\
