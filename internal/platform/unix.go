@@ -84,7 +84,7 @@ func (p *unixPlatform) GetPath() ([]string, error) {
 }
 
 func (p *unixPlatform) AddToPath(entry string) error {
-	configPath := p.ShellConfigPath()
+	configPath := p.shellConfigPath()
 
 	data, err := os.ReadFile(configPath)
 	if err != nil && !os.IsNotExist(err) {
@@ -109,7 +109,7 @@ func (p *unixPlatform) AddToPath(entry string) error {
 }
 
 func (p *unixPlatform) RemoveFromPath(entry string) error {
-	configPath := p.ShellConfigPath()
+	configPath := p.shellConfigPath()
 
 	data, err := os.ReadFile(configPath)
 	if os.IsNotExist(err) {
@@ -164,7 +164,11 @@ esac
 ` + nvyHookEndMarker + "\n"
 }
 
-func (p *unixPlatform) ShellConfigPath() string {
+func (p *unixPlatform) ShellConfigPaths() []string {
+	return []string{p.shellConfigPath()}
+}
+
+func (p *unixPlatform) shellConfigPath() string {
 	shell := os.Getenv("SHELL")
 	home, _ := os.UserHomeDir()
 	if strings.Contains(shell, "zsh") {

@@ -27,10 +27,11 @@ func runUninstall(_ *cobra.Command, _ []string) error {
 	p := platform.Get()
 
 	// 1. Shell hook.
-	shellConfigPath := p.ShellConfigPath()
-	if shellConfigPath == "" {
+	shellConfigPaths := p.ShellConfigPaths()
+	if len(shellConfigPaths) == 0 {
 		fmt.Println("shell hook: not supported on this platform — skipped")
-	} else {
+	}
+	for _, shellConfigPath := range shellConfigPaths {
 		removed, err := removeHookBlock(shellConfigPath)
 		switch {
 		case err != nil:
@@ -43,9 +44,10 @@ func runUninstall(_ *cobra.Command, _ []string) error {
 	}
 
 	// 2. Shell completion.
-	if shellConfigPath == "" {
+	if len(shellConfigPaths) == 0 {
 		fmt.Println("shell completion: not supported on this platform — skipped")
-	} else {
+	}
+	for _, shellConfigPath := range shellConfigPaths {
 		removed, err := removeCompletionBlock(shellConfigPath)
 		switch {
 		case err != nil:

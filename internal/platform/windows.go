@@ -236,13 +236,32 @@ function prompt {
 ` + nvyHookEndMarker + "\n"
 }
 
-func (p *windowsPlatform) ShellConfigPath() string {
+// ShellConfigPaths returns the PowerShell 7 profile first, then the Windows
+// PowerShell 5.1 one; each edition loads only its own.
+func (p *windowsPlatform) ShellConfigPaths() []string {
+	return powershellProfilePaths(documentsDir())
+}
+
+// documentsDir resolves the real Documents folder (often redirected to
+// OneDrive), falling back to %USERPROFILE%\Documents.
+func documentsDir() string {
+	if dir, err := windows.KnownFolderPath(windows.FOLDERID_Documents, 0); err == nil && dir != "" {
+		return dir
+	}
 	profile := os.Getenv("USERPROFILE")
 	if profile == "" {
 		home, _ := os.UserHomeDir()
 		profile = home
 	}
-	return filepath.Join(profile, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1")
+	return filepath.Join(profile, "Documents")
+}
+
+func powershellProfilePaths(docs string) []string {
+	const name = "Microsoft.PowerShell_profile.ps1"
+	return []string{
+		filepath.Join(docs, "PowerShell", name),
+		filepath.Join(docs, "WindowsPowerShell", name),
+	}
 }
 
 // schtasksScheduleArgs returns the schtasks schedule flags for an interval in

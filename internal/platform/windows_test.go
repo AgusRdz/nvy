@@ -5,6 +5,7 @@ package platform
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -197,5 +198,16 @@ func TestSchtasksScheduleArgs(t *testing.T) {
 		if got := schtasksScheduleArgs(c.hours); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("schtasksScheduleArgs(%d) = %v, want %v", c.hours, got, c.want)
 		}
+	}
+}
+
+func TestPowershellProfilePaths(t *testing.T) {
+	docs := filepath.Join("C:\\", "Users", "u", "OneDrive - Corp", "Documents")
+	want := []string{
+		filepath.Join(docs, "PowerShell", "Microsoft.PowerShell_profile.ps1"),
+		filepath.Join(docs, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"),
+	}
+	if got := powershellProfilePaths(docs); !reflect.DeepEqual(got, want) {
+		t.Errorf("powershellProfilePaths(%q) = %v, want %v", docs, got, want)
 	}
 }

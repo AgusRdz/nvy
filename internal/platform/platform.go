@@ -20,7 +20,9 @@ type Platform interface {
 	RemoveFromPath(entry string) error
 	GetPath() ([]string, error)
 	ShellHookScript() string
-	ShellConfigPath() string
+	// ShellConfigPaths returns every shell profile the hook and completion
+	// blocks are installed into; empty means unsupported.
+	ShellConfigPaths() []string
 	// RegisterBackgroundTask (re-)registers the "nvy check" task to run every
 	// intervalHours hours (1, 2, 3, 4, 6, 8, 12 or 24).
 	RegisterBackgroundTask(binaryPath string, intervalHours int) error

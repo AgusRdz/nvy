@@ -68,12 +68,20 @@ func installCompletion() (bool, error) {
 		sourceLine = `source "$HOME/.nvy/completion.bash"`
 	}
 
-	configPath := platform.Get().ShellConfigPath()
-	if configPath == "" {
+	configPaths := platform.Get().ShellConfigPaths()
+	if len(configPaths) == 0 {
 		return false, fmt.Errorf("nvy: no shell config path for this platform")
 	}
 
-	return installMarkerBlock(configPath, nvyCompletionMarker, nvyCompletionEndMarker, sourceLine)
+	installedAny := false
+	for _, configPath := range configPaths {
+		installed, err := installMarkerBlock(configPath, nvyCompletionMarker, nvyCompletionEndMarker, sourceLine)
+		if err != nil {
+			return installedAny, err
+		}
+		installedAny = installedAny || installed
+	}
+	return installedAny, nil
 }
 
 // installMarkerBlock appends a startMarker/body/endMarker block to the file

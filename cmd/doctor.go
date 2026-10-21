@@ -40,11 +40,12 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 
 	// 2. Shell hook installed.
-	shellConfigPath := p.ShellConfigPath()
-	if shellConfigPath == "" {
+	shellConfigPaths := p.ShellConfigPaths()
+	if len(shellConfigPaths) == 0 {
 		fmt.Println("[!] shell hook not supported on this platform")
 		issues++
-	} else {
+	}
+	for _, shellConfigPath := range shellConfigPaths {
 		data, err := os.ReadFile(shellConfigPath)
 		switch {
 		case os.IsNotExist(err):
