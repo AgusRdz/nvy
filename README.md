@@ -1,4 +1,9 @@
-# nvy
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/nvy-logo-dark.svg">
+    <img alt="nvy" src="assets/logo/nvy-logo.svg" width="300">
+  </picture>
+</h1>
 
 **Environment variables that expire and remind you — offline, cross-platform, no cloud, no account.**
 
