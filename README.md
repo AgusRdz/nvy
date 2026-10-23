@@ -212,11 +212,14 @@ Store where a token is renewed, and jump straight there when it expires:
 
 ```bash
 nvy set GITLAB_TOKEN=<token> --expires 2026-12-31 --renew-url https://gitlab.com/-/user_settings/personal_access_tokens
+nvy set GITLAB_TOKEN --renew-url https://gitlab.com/-/user_settings/personal_access_tokens  # add it to a var you already have
 nvy renew GITLAB_TOKEN             # opens the page, then prompts for the new value (hidden) and expiry
 nvy renew GITLAB_TOKEN --open-only # just open the page
 ```
 
-`nvy renew` prompts only when stdin is a terminal; a blank value skips saving. Re-setting a value with `nvy set KEY=newvalue` keeps the stored URL. `nvy list` shows it after the note as `↗ <url>`. In `nvy ui`, `[u]` sets or clears the renew URL and `[o]` opens it (a cyan `↗` marks rows that have one; press `[e]` afterwards to paste the new value). The expiry notification ends with `run: nvy renew KEY`; it never opens the browser on its own.
+`nvy renew` prompts only when stdin is a terminal; a blank value skips saving. Re-setting a value with `nvy set KEY=newvalue` keeps the stored URL. `nvy list` shows it after the note as `↗ <url>`. In `nvy ui`, `[u]` sets or clears the renew URL and `[o]` opens it (a cyan `↗` marks rows that have one; press `[e]` afterwards to paste the new value). The footer shows `[o] renew` on a var with a URL and `[u] renew URL` on one without. The expiry notification ends with `run: nvy renew KEY`; it never opens the browser on its own.
+
+The page opens with `open` on macOS and `xdg-open` on Linux. Under WSL it opens in the Windows browser — via `wslview` if [wslu](https://github.com/wslutilities/wslu) is installed, otherwise `rundll32.exe` through Windows interop. If no browser can be reached, the URL is printed so you can open it by hand.
 
 Notifications are on by default; turn them off without touching the scheduled task:
 
@@ -267,7 +270,7 @@ On Windows this edits the user `PATH` in the registry (preserving `REG_EXPAND_SZ
 
 ## Copy to clipboard
 
-In `nvy ui`, press `[y]` on the selected entry to copy it to the clipboard: `KEY=VALUE` (the real value, not the masked preview) for a GLOBAL/LOCAL var, or the raw entry for a PATH row. Uses `clip.exe` on Windows, `pbcopy` on macOS, and `wl-copy`/`xclip` (whichever is found) on Linux — no extra dependency.
+In `nvy ui`, press `[y]` on the selected entry to copy it to the clipboard: `KEY=VALUE` (the real value, not the masked preview) for a GLOBAL/LOCAL var, or the raw entry for a PATH row. Uses `clip.exe` on Windows, `pbcopy` on macOS, and `wl-copy`/`xclip` (whichever is found) on Linux — no extra dependency. Under WSL it copies to the Windows clipboard through `clip.exe`.
 
 ---
 

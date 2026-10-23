@@ -15,8 +15,16 @@ import (
 )
 
 var renewCmd = &cobra.Command{
-	Use:               "renew KEY",
-	Short:             "Open a variable's renew page, then save the new value",
+	Use:   "renew KEY",
+	Short: "Open a variable's renew page, then save the new value",
+	Long: `Open the page where KEY's token is renewed, then prompt for the new value
+(hidden) and expiry. Press Enter at either prompt to skip it.
+
+Store the URL first with: nvy set KEY --renew-url <url>  (add --local for .env vars)
+In nvy ui: [u] sets the renew URL, [o] opens it.`,
+	Example: `  nvy set GITLAB_TOKEN --renew-url https://gitlab.com/-/user_settings/personal_access_tokens
+  nvy renew GITLAB_TOKEN
+  nvy renew GITLAB_TOKEN --open-only`,
 	Args:              cobra.ExactArgs(1),
 	RunE:              runRenew,
 	ValidArgsFunction: completeFirstArgFunc(completeRenewNames),

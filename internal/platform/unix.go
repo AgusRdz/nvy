@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 )
 
 type unixPlatform struct{}
@@ -364,13 +365,23 @@ func removeCron() error {
 	return nil
 }
 
-// Copy copies text to the clipboard: pbcopy on darwin, wl-copy or xclip on
-// Linux (whichever is found on PATH first).
+// Copy copies text to the clipboard: pbcopy on darwin, the Windows clipboard
+// via clip.exe under WSL, else wl-copy or xclip on Linux (whichever is found on
+// PATH first).
 func (p *unixPlatform) Copy(text string) error {
 	var cmd *exec.Cmd
 	switch {
 	case runtime.GOOS == "darwin":
 		cmd = exec.Command("pbcopy")
+	case isWSL() && wslClip() != "":
+		// clip.exe reads stdin in the OEM code page unless it starts with a
+		// UTF-16LE BOM, so send UTF-16 to keep non-ASCII values intact.
+		cmd = exec.Command(wslClip())
+		cmd.Stdin = bytes.NewReader(utf16LEWithBOM(text))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("nvy: %s: %w — %s", cmd.Path, err, string(out))
+		}
+		return nil
 	default:
 		if path, err := exec.LookPath("wl-copy"); err == nil {
 			cmd = exec.Command(path)
@@ -387,14 +398,78 @@ func (p *unixPlatform) Copy(text string) error {
 	return nil
 }
 
-// OpenURL opens url in the default browser: open on darwin, xdg-open elsewhere.
+// OpenURL opens url in the default browser: open on darwin, the Windows host
+// browser under WSL (which rarely has xdg-open or a Linux browser), xdg-open
+// elsewhere.
 func (p *unixPlatform) OpenURL(url string) error {
-	opener := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		opener = "open"
+	var cmd *exec.Cmd
+	switch {
+	case runtime.GOOS == "darwin":
+		cmd = exec.Command("open", url)
+	case isWSL():
+		cmd = wslOpener(url)
+		if cmd == nil {
+			return fmt.Errorf("nvy: no way to reach the Windows browser from WSL (install wslu or enable Windows interop)")
+		}
+	default:
+		path, err := exec.LookPath("xdg-open")
+		if err != nil {
+			return fmt.Errorf("nvy: xdg-open not found (install xdg-utils)")
+		}
+		cmd = exec.Command(path, url)
 	}
-	if err := exec.Command(opener, url).Start(); err != nil {
-		return fmt.Errorf("nvy: %s: %w", opener, err)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("nvy: %s: %w", cmd.Path, err)
 	}
 	return nil
+}
+
+// isWSL reports whether nvy is running inside Windows Subsystem for Linux.
+func isWSL() bool {
+	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
+		return true
+	}
+	b, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	return err == nil && strings.Contains(strings.ToLower(string(b)), "microsoft")
+}
+
+// wslOpener returns a command that opens url in the Windows host browser:
+// wslview (wslu) if installed, else rundll32.exe through WSL interop — from
+// PATH, or its fixed System32 location when Windows paths aren't appended.
+// nil when neither is available.
+func wslOpener(url string) *exec.Cmd {
+	if path, err := exec.LookPath("wslview"); err == nil {
+		return exec.Command(path, url)
+	}
+	rundll := "/mnt/c/Windows/System32/rundll32.exe"
+	if path, err := exec.LookPath("rundll32.exe"); err == nil {
+		rundll = path
+	} else if _, err := os.Stat(rundll); err != nil {
+		return nil
+	}
+	return exec.Command(rundll, "url.dll,FileProtocolHandler", url)
+}
+
+// wslClip returns the path to clip.exe reachable through WSL interop — from
+// PATH, or its fixed System32 location — or "" when it isn't available.
+func wslClip() string {
+	if path, err := exec.LookPath("clip.exe"); err == nil {
+		return path
+	}
+	const fixed = "/mnt/c/Windows/System32/clip.exe"
+	if _, err := os.Stat(fixed); err == nil {
+		return fixed
+	}
+	return ""
+}
+
+// utf16LEWithBOM encodes s as UTF-16LE prefixed with a byte-order mark.
+func utf16LEWithBOM(s string) []byte {
+	units := utf16.Encode([]rune(s))
+	b := make([]byte, 2, 2+2*len(units))
+	b[0], b[1] = 0xFF, 0xFE
+	for _, u := range units {
+		b = append(b, byte(u), byte(u>>8))
+	}
+	return b
 }

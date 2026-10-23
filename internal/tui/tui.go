@@ -438,10 +438,18 @@ func (u *ui) writeFooter(sb *strings.Builder) {
 		{"↑↓", "navigate"}, {"←→", "section"}, {"n", "new"}, {"e", "edit"},
 		{"?", "help"}, {"q", "quit"},
 	}
-	if u.selectedRenewURL() != "" {
-		// keep [?] help and [q] quit last
+	// On a variable row, surface [o] when it has a renew URL, else [u] so
+	// setting one is discoverable. Keep [?] help and [q] quit last.
+	var renewItem struct{ key, label string }
+	switch {
+	case u.selectedRenewURL() != "":
+		renewItem.key, renewItem.label = "o", "renew"
+	case u.selectedIsVar():
+		renewItem.key, renewItem.label = "u", "renew URL"
+	}
+	if renewItem.key != "" {
 		n := len(items) - 2
-		items = append(items[:n], append([]struct{ key, label string }{{"o", "renew"}}, items[n:]...)...)
+		items = append(items[:n], append([]struct{ key, label string }{renewItem}, items[n:]...)...)
 	}
 	const indent = "  "
 	const gap = 2 // visible width of the "  " separator between items
@@ -1183,10 +1191,22 @@ func (u *ui) cmdOpenRenew() {
 		return
 	}
 	if err := platform.Get().OpenURL(renewURL); err != nil {
-		u.msg = red("error: " + err.Error())
+		// Still hand over the URL so the user can open it by hand.
+		u.msg = red("error: "+err.Error()) + "  " + dim(renewURL)
 		return
 	}
 	u.msg = "opened renew page — press [e] to paste the new value"
+}
+
+// selectedIsVar reports whether the cursor is on a GLOBAL or LOCAL variable row.
+func (u *ui) selectedIsVar() bool {
+	switch u.section {
+	case 0:
+		return u.cursor < len(u.globals)
+	case 1:
+		return u.cursor < len(u.locals)
+	}
+	return false
 }
 
 // selectedRenewURL returns the renew URL of the selected global/local row, or
