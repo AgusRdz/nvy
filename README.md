@@ -176,7 +176,7 @@ nvy uninstall [--keep-data]    Remove the hook, completions, background task, da
 nvy version                    Print the version
 ```
 
-`set` flags: `--global` (default) / `--local`, `--expires YYYY-MM-DD` (or `none` to clear), `--note TEXT`, `--renew-url URL` (http/https only; empty clears). Pass a **bare `KEY`** with `--expires`/`--note`/`--renew-url` (no `=value`) to stamp metadata on an existing or external var without retyping its value.
+`set` flags: `--global` (default) / `--local`, `--expires YYYY-MM-DD` (or `none` to clear), `--note TEXT`, `--renew-url URL` (http/https only; empty clears). Pass a **bare `KEY`** with `--expires`/`--note`/`--renew-url` (no `=value`) to stamp metadata on an existing or external var without retyping its value. Re-setting a value (`nvy set KEY=new`) keeps the existing expiry, note and renew URL unless you pass the matching flag.
 
 ---
 
@@ -216,7 +216,7 @@ nvy renew GITLAB_TOKEN             # opens the page, then prompts for the new va
 nvy renew GITLAB_TOKEN --open-only # just open the page
 ```
 
-`nvy renew` prompts only when stdin is a terminal; a blank value skips saving. Re-setting a value with `nvy set KEY=newvalue` keeps the stored URL. `nvy list` shows it after the note as `↗ <url>`. In `nvy ui`, `[u]` sets or clears the renew URL and `[o]` opens it (a cyan `↗` marks rows that have one; press `[e]` afterwards to paste the new value). On Windows the expiry toast is clickable and carries a **Renew** button that opens the page; on macOS/Linux the notification text ends with `run: nvy renew KEY`.
+`nvy renew` prompts only when stdin is a terminal; a blank value skips saving. Re-setting a value with `nvy set KEY=newvalue` keeps the stored URL. `nvy list` shows it after the note as `↗ <url>`. In `nvy ui`, `[u]` sets or clears the renew URL and `[o]` opens it (a cyan `↗` marks rows that have one; press `[e]` afterwards to paste the new value). The expiry notification ends with `run: nvy renew KEY`; it never opens the browser on its own.
 
 Notifications are on by default; turn them off without touching the scheduled task:
 

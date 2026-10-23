@@ -7,21 +7,17 @@ import (
 )
 
 // Expiring fires a Windows toast notification using a registered AppID
-// so the app name shows correctly instead of "DefaultAppName". With a renew
-// URL the toast body and a "Renew" button both open it.
+// so the app name shows correctly instead of "DefaultAppName". A renew URL is
+// surfaced as an `nvy renew` hint rather than a click action, so a stray click
+// on the toast never launches a browser.
 func Expiring(key string, daysLeft int, renewURL string) error {
-	msg := ExpiryMessage(key, daysLeft)
+	msg := ExpiryMessage(key, daysLeft) + RenewHint(key, renewURL)
 
 	n := toast.Notification{
 		// Use the Windows PowerShell AppID — registered on all Windows systems.
 		AppID:   "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe",
 		Title:   "nvy",
 		Message: msg,
-	}
-	if renewURL != "" {
-		n.ActivationType = "protocol"
-		n.ActivationArguments = renewURL
-		n.Actions = []toast.Action{{Type: "protocol", Label: "Renew", Arguments: renewURL}}
 	}
 	return n.Push()
 }

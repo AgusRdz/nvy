@@ -77,9 +77,9 @@ func runSet(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("nvy: invalid format: expected KEY=VALUE")
 		}
 		if setLocal {
-			return setLocalVar(key, value, expiresAt, renewChanged)
+			return setLocalVar(key, value, expiresAt, expiresChanged, noteChanged, renewChanged)
 		}
-		return setGlobalVar(key, value, expiresAt, renewChanged)
+		return setGlobalVar(key, value, expiresAt, expiresChanged, noteChanged, renewChanged)
 	}
 
 	if !expiresChanged && !noteChanged && !renewChanged {
@@ -91,24 +91,26 @@ func runSet(cmd *cobra.Command, args []string) error {
 	return setGlobalMeta(key, expiresAt, expiresChanged, noteChanged, renewChanged)
 }
 
-func setGlobalVar(key, value string, expiresAt *time.Time, renewChanged bool) error {
+func setGlobalVar(key, value string, expiresAt *time.Time, expiresChanged, noteChanged, renewChanged bool) error {
 	gs, err := store.LoadGlobal()
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
 	}
 
-	// Re-setting a value must not drop a renew URL the caller didn't touch.
-	renewURL := gs[key].RenewURL
+	// Re-setting a value keeps any metadata the caller didn't pass a flag for.
+	entry := gs[key]
+	entry.Value = value
+	entry.UpdatedAt = time.Now().UTC()
+	if expiresChanged {
+		entry.ExpiresAt = expiresAt
+	}
+	if noteChanged {
+		entry.Note = setNote
+	}
 	if renewChanged {
-		renewURL = setRenewURL
+		entry.RenewURL = setRenewURL
 	}
-	gs[key] = store.GlobalEntry{
-		Value:     value,
-		UpdatedAt: time.Now().UTC(),
-		ExpiresAt: expiresAt,
-		Note:      setNote,
-		RenewURL:  renewURL,
-	}
+	gs[key] = entry
 
 	if err := store.SaveGlobal(gs); err != nil {
 		return fmt.Errorf("nvy: %w", err)
@@ -122,7 +124,7 @@ func setGlobalVar(key, value string, expiresAt *time.Time, renewChanged bool) er
 	return nil
 }
 
-func setLocalVar(key, value string, expiresAt *time.Time, renewChanged bool) error {
+func setLocalVar(key, value string, expiresAt *time.Time, expiresChanged, noteChanged, renewChanged bool) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
@@ -136,15 +138,18 @@ func setLocalVar(key, value string, expiresAt *time.Time, renewChanged bool) err
 		return fmt.Errorf("nvy: %w", err)
 	}
 
-	if setExpires != "" || setNote != "" || renewChanged {
+	if expiresChanged || noteChanged || renewChanged {
 		meta, err := store.LoadLocalMeta(dir)
 		if err != nil {
 			return fmt.Errorf("nvy: %w", err)
 		}
-		m := store.LocalMeta{ExpiresAt: expiresAt, Note: setNote, RenewURL: meta[key].RenewURL}
-		if setExpires == "" && setNote == "" {
-			// Only --renew-url was given: keep the existing expiry and note.
-			m = meta[key]
+		// Keep any metadata the caller didn't pass a flag for.
+		m := meta[key]
+		if expiresChanged {
+			m.ExpiresAt = expiresAt
+		}
+		if noteChanged {
+			m.Note = setNote
 		}
 		if renewChanged {
 			m.RenewURL = setRenewURL

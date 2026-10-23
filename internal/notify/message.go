@@ -16,8 +16,8 @@ func ExpiryMessage(key string, days int) string {
 	}
 }
 
-// RenewHint returns the suffix pointing at `nvy renew` for platforms whose
-// notifications can't carry a clickable link; empty when no renew URL is set.
+// RenewHint returns the notification suffix pointing at `nvy renew`; empty
+// when no renew URL is set.
 func RenewHint(key, renewURL string) string {
 	if renewURL == "" {
 		return ""
