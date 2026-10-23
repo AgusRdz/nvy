@@ -157,6 +157,36 @@ func completeVarNames(toComplete string) []string {
 	return filterPrefix(names, toComplete)
 }
 
+// completeRenewNames returns global + local variable names (deduped) that
+// have a renew URL, matching the toComplete prefix — used as a
+// ValidArgsFunction for `renew`.
+func completeRenewNames(toComplete string) []string {
+	seen := map[string]bool{}
+	var names []string
+
+	if gs, err := store.LoadGlobal(); err == nil {
+		for k, e := range gs {
+			if e.RenewURL != "" && !seen[k] {
+				seen[k] = true
+				names = append(names, k)
+			}
+		}
+	}
+
+	if dir, err := os.Getwd(); err == nil {
+		if meta, err := store.LoadLocalMeta(dir); err == nil {
+			for k, m := range meta {
+				if m.RenewURL != "" && !seen[k] {
+					seen[k] = true
+					names = append(names, k)
+				}
+			}
+		}
+	}
+
+	return filterPrefix(names, toComplete)
+}
+
 // completeExternalNames returns external OS env var names not already
 // managed by nvy's global store, matching the toComplete prefix — used as a
 // ValidArgsFunction for `import`.

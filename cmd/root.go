@@ -58,6 +58,7 @@ func init() {
 	rootCmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	rootCmd.AddCommand(setCmd)
 	rootCmd.AddCommand(getCmd)
+	rootCmd.AddCommand(renewCmd)
 	rootCmd.AddCommand(removeCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(initCmd)

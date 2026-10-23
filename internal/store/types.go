@@ -7,12 +7,14 @@ type GlobalEntry struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	Note      string     `json:"note,omitempty"`
+	RenewURL  string     `json:"renew_url,omitempty"`
 }
 
 type LocalMeta struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	Note      string     `json:"note,omitempty"`
+	RenewURL  string     `json:"renew_url,omitempty"`
 }
 
 type GlobalStore map[string]GlobalEntry

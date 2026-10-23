@@ -386,3 +386,15 @@ func (p *unixPlatform) Copy(text string) error {
 	}
 	return nil
 }
+
+// OpenURL opens url in the default browser: open on darwin, xdg-open elsewhere.
+func (p *unixPlatform) OpenURL(url string) error {
+	opener := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		opener = "open"
+	}
+	if err := exec.Command(opener, url).Start(); err != nil {
+		return fmt.Errorf("nvy: %s: %w", opener, err)
+	}
+	return nil
+}

@@ -113,6 +113,9 @@ func printGlobalList(cfg store.Config, all bool) error {
 		if entry.Note != "" {
 			line += fmt.Sprintf("  [%s]", entry.Note)
 		}
+		if entry.RenewURL != "" {
+			line += "  ↗ " + entry.RenewURL
+		}
 		if isHidden {
 			line += "  (hidden)"
 		}
@@ -253,6 +256,9 @@ func printLocalList(cfg store.Config, all bool) error {
 			}
 			if m.Note != "" {
 				line += fmt.Sprintf("  [%s]", m.Note)
+			}
+			if m.RenewURL != "" {
+				line += "  ↗ " + m.RenewURL
 			}
 		}
 		if isHidden {

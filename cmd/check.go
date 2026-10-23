@@ -35,12 +35,12 @@ func runCheck(_ *cobra.Command, _ []string) error {
 
 	var due int
 
-	notifyOnce := func(key string, days int) {
+	notifyOnce := func(key string, days int, renewURL string) {
 		due++
 		if !shouldNotify(state[key], today) {
 			return
 		}
-		if err := notify.Expiring(key, days); err != nil {
+		if err := notify.Expiring(key, days, renewURL); err != nil {
 			fmt.Fprintf(os.Stderr, "nvy: notify %s: %v\n", key, err)
 		}
 		state[key] = today
@@ -57,7 +57,7 @@ func runCheck(_ *cobra.Command, _ []string) error {
 		}
 		days := daysUntil(*entry.ExpiresAt)
 		if days <= cfg.NotificationLeadDays {
-			notifyOnce(key, days)
+			notifyOnce(key, days, entry.RenewURL)
 		}
 	}
 
@@ -72,7 +72,7 @@ func runCheck(_ *cobra.Command, _ []string) error {
 				}
 				days := daysUntil(*entry.ExpiresAt)
 				if days <= cfg.NotificationLeadDays {
-					notifyOnce(key, days)
+					notifyOnce(key, days, entry.RenewURL)
 				}
 			}
 		}

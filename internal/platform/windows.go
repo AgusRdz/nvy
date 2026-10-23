@@ -330,3 +330,11 @@ func (p *windowsPlatform) Copy(text string) error {
 	}
 	return nil
 }
+
+// OpenURL opens url in the default browser via the shell's URL handler.
+func (p *windowsPlatform) OpenURL(url string) error {
+	if err := exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start(); err != nil {
+		return fmt.Errorf("nvy: open browser: %w", err)
+	}
+	return nil
+}

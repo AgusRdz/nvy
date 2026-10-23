@@ -23,3 +23,12 @@ func TestExpiryMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestRenewHint(t *testing.T) {
+	if got := RenewHint("FOO", "https://example.com/renew"); got != " — run: nvy renew FOO" {
+		t.Errorf("RenewHint with URL = %q", got)
+	}
+	if got := RenewHint("FOO", ""); got != "" {
+		t.Errorf("RenewHint without URL = %q, want empty", got)
+	}
+}

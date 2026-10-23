@@ -153,7 +153,8 @@ nvy remove API_URL                     # delete
 
 ```
 nvy init                       Install the shell hook, shell completions, + register the expiration check schedule
-nvy set KEY[=value] [flags]    Set a variable, or (bare KEY) stamp its expiry/note
+nvy set KEY[=value] [flags]    Set a variable, or (bare KEY) stamp its expiry/note/renew URL
+nvy renew KEY [--open-only]    Open the var's renew page, then save the new value
 nvy get KEY [--global|--local] Print a variable's value
 nvy remove KEY [scope]         Delete a variable
 nvy list [--global|--local|--path] [--all]
@@ -175,7 +176,7 @@ nvy uninstall [--keep-data]    Remove the hook, completions, background task, da
 nvy version                    Print the version
 ```
 
-`set` flags: `--global` (default) / `--local`, `--expires YYYY-MM-DD` (or `none` to clear), `--note TEXT`. Pass a **bare `KEY`** with `--expires`/`--note` (no `=value`) to stamp metadata on an existing or external var without retyping its value.
+`set` flags: `--global` (default) / `--local`, `--expires YYYY-MM-DD` (or `none` to clear), `--note TEXT`, `--renew-url URL` (http/https only; empty clears). Pass a **bare `KEY`** with `--expires`/`--note`/`--renew-url` (no `=value`) to stamp metadata on an existing or external var without retyping its value.
 
 ---
 
@@ -204,6 +205,18 @@ nvy set API_TOKEN --global --expires none         # clear it
 ```
 
 In `nvy ui`, press `[x]` on a variable to set or clear its expiry, and `[t]` to set or clear its **note** (blank clears it) — external vars are imported first for both. The note shows in magenta brackets at the end of the row. Keys are colored by urgency too — red once expired, yellow inside the lead-days window.
+
+### Renew URL
+
+Store where a token is renewed, and jump straight there when it expires:
+
+```bash
+nvy set GITLAB_TOKEN=<token> --expires 2026-12-31 --renew-url https://gitlab.com/-/user_settings/personal_access_tokens
+nvy renew GITLAB_TOKEN             # opens the page, then prompts for the new value (hidden) and expiry
+nvy renew GITLAB_TOKEN --open-only # just open the page
+```
+
+`nvy renew` prompts only when stdin is a terminal; a blank value skips saving. Re-setting a value with `nvy set KEY=newvalue` keeps the stored URL. `nvy list` shows it after the note as `↗ <url>`. In `nvy ui`, `[u]` sets or clears the renew URL and `[o]` opens it (a cyan `↗` marks rows that have one; press `[e]` afterwards to paste the new value). On Windows the expiry toast is clickable and carries a **Renew** button that opens the page; on macOS/Linux the notification text ends with `run: nvy renew KEY`.
 
 Notifications are on by default; turn them off without touching the scheduled task:
 

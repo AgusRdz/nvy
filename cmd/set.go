@@ -14,16 +14,17 @@ import (
 
 var setCmd = &cobra.Command{
 	Use:   "set KEY[=VALUE]",
-	Short: "Set an environment variable, or its expiry/note",
+	Short: "Set an environment variable, or its expiry/note/renew URL",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runSet,
 }
 
 var (
-	setGlobal  bool
-	setLocal   bool
-	setExpires string
-	setNote    string
+	setGlobal   bool
+	setLocal    bool
+	setExpires  string
+	setNote     string
+	setRenewURL string
 )
 
 func init() {
@@ -31,6 +32,7 @@ func init() {
 	setCmd.Flags().BoolVar(&setLocal, "local", false, "set in .env of current directory")
 	setCmd.Flags().StringVar(&setExpires, "expires", "", "expiration date (YYYY-MM-DD); \"none\" or \"\" clears an existing expiry")
 	setCmd.Flags().StringVar(&setNote, "note", "", "note or description")
+	setCmd.Flags().StringVar(&setRenewURL, "renew-url", "", "URL where the token is renewed (http/https); \"\" clears it")
 }
 
 // parseSetArg splits args[0] into key/value for the value-setting path. A
@@ -47,6 +49,13 @@ func parseSetArg(arg string) (key, value string, hasValue bool) {
 func runSet(cmd *cobra.Command, args []string) error {
 	expiresChanged := cmd.Flags().Changed("expires")
 	noteChanged := cmd.Flags().Changed("note")
+	renewChanged := cmd.Flags().Changed("renew-url")
+
+	if renewChanged && setRenewURL != "" {
+		if err := store.ValidateRenewURL(setRenewURL); err != nil {
+			return fmt.Errorf("nvy: %w", err)
+		}
+	}
 
 	var expiresAt *time.Time
 	if expiresChanged {
@@ -68,31 +77,37 @@ func runSet(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("nvy: invalid format: expected KEY=VALUE")
 		}
 		if setLocal {
-			return setLocalVar(key, value, expiresAt)
+			return setLocalVar(key, value, expiresAt, renewChanged)
 		}
-		return setGlobalVar(key, value, expiresAt)
+		return setGlobalVar(key, value, expiresAt, renewChanged)
 	}
 
-	if !expiresChanged && !noteChanged {
-		return fmt.Errorf("nvy: nothing to set; provide a value or --expires/--note")
+	if !expiresChanged && !noteChanged && !renewChanged {
+		return fmt.Errorf("nvy: nothing to set; provide a value or --expires/--note/--renew-url")
 	}
 	if setLocal {
-		return setLocalMeta(key, expiresAt, expiresChanged, noteChanged)
+		return setLocalMeta(key, expiresAt, expiresChanged, noteChanged, renewChanged)
 	}
-	return setGlobalMeta(key, expiresAt, expiresChanged, noteChanged)
+	return setGlobalMeta(key, expiresAt, expiresChanged, noteChanged, renewChanged)
 }
 
-func setGlobalVar(key, value string, expiresAt *time.Time) error {
+func setGlobalVar(key, value string, expiresAt *time.Time, renewChanged bool) error {
 	gs, err := store.LoadGlobal()
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
 	}
 
+	// Re-setting a value must not drop a renew URL the caller didn't touch.
+	renewURL := gs[key].RenewURL
+	if renewChanged {
+		renewURL = setRenewURL
+	}
 	gs[key] = store.GlobalEntry{
 		Value:     value,
 		UpdatedAt: time.Now().UTC(),
 		ExpiresAt: expiresAt,
 		Note:      setNote,
+		RenewURL:  renewURL,
 	}
 
 	if err := store.SaveGlobal(gs); err != nil {
@@ -107,7 +122,7 @@ func setGlobalVar(key, value string, expiresAt *time.Time) error {
 	return nil
 }
 
-func setLocalVar(key, value string, expiresAt *time.Time) error {
+func setLocalVar(key, value string, expiresAt *time.Time, renewChanged bool) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
@@ -121,16 +136,21 @@ func setLocalVar(key, value string, expiresAt *time.Time) error {
 		return fmt.Errorf("nvy: %w", err)
 	}
 
-	if setExpires != "" || setNote != "" {
+	if setExpires != "" || setNote != "" || renewChanged {
 		meta, err := store.LoadLocalMeta(dir)
 		if err != nil {
 			return fmt.Errorf("nvy: %w", err)
 		}
-		meta[key] = store.LocalMeta{
-			UpdatedAt: time.Now().UTC(),
-			ExpiresAt: expiresAt,
-			Note:      setNote,
+		m := store.LocalMeta{ExpiresAt: expiresAt, Note: setNote, RenewURL: meta[key].RenewURL}
+		if setExpires == "" && setNote == "" {
+			// Only --renew-url was given: keep the existing expiry and note.
+			m = meta[key]
 		}
+		if renewChanged {
+			m.RenewURL = setRenewURL
+		}
+		m.UpdatedAt = time.Now().UTC()
+		meta[key] = m
 		if err := store.SaveLocalMeta(dir, meta); err != nil {
 			return fmt.Errorf("nvy: %w", err)
 		}
@@ -140,11 +160,11 @@ func setLocalVar(key, value string, expiresAt *time.Time) error {
 	return nil
 }
 
-// setGlobalMeta updates ExpiresAt/Note on an existing managed global var
+// setGlobalMeta updates ExpiresAt/Note/RenewURL on an existing managed global var
 // without touching its Value. A key that is not yet managed but exists as an
 // external OS var is adopted (its current value snapshotted into
 // global.json, mirroring `nvy import`) and stamped in the same step.
-func setGlobalMeta(key string, expiresAt *time.Time, expiresChanged, noteChanged bool) error {
+func setGlobalMeta(key string, expiresAt *time.Time, expiresChanged, noteChanged, renewChanged bool) error {
 	gs, err := store.LoadGlobal()
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
@@ -169,6 +189,9 @@ func setGlobalMeta(key string, expiresAt *time.Time, expiresChanged, noteChanged
 	if noteChanged {
 		entry.Note = setNote
 	}
+	if renewChanged {
+		entry.RenewURL = setRenewURL
+	}
 	entry.UpdatedAt = time.Now().UTC()
 	gs[key] = entry
 
@@ -180,9 +203,9 @@ func setGlobalMeta(key string, expiresAt *time.Time, expiresChanged, noteChanged
 	return nil
 }
 
-// setLocalMeta updates ExpiresAt/Note in the .env.nvy sidecar for an
+// setLocalMeta updates ExpiresAt/Note/RenewURL in the .env.nvy sidecar for an
 // existing local var without touching its value in .env.
-func setLocalMeta(key string, expiresAt *time.Time, expiresChanged, noteChanged bool) error {
+func setLocalMeta(key string, expiresAt *time.Time, expiresChanged, noteChanged, renewChanged bool) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("nvy: %w", err)
@@ -207,6 +230,9 @@ func setLocalMeta(key string, expiresAt *time.Time, expiresChanged, noteChanged 
 	}
 	if noteChanged {
 		m.Note = setNote
+	}
+	if renewChanged {
+		m.RenewURL = setRenewURL
 	}
 	m.UpdatedAt = time.Now().UTC()
 	meta[key] = m

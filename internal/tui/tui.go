@@ -44,6 +44,7 @@ type varRow struct {
 	value     string
 	expiresAt *time.Time
 	note      string
+	renewURL  string
 	external  bool // set outside nvy (OS/registry); read-only until imported
 	hidden    bool // marked hidden via `nvy hide` / [h]
 }
@@ -236,6 +237,12 @@ func Run() error {
 			case "t":
 				u.cmdNote()
 
+			case "u":
+				u.cmdRenewURL()
+
+			case "o":
+				u.cmdOpenRenew()
+
 			case "y":
 				u.cmdCopy()
 
@@ -380,6 +387,8 @@ var helpGroups = []struct {
 		{"i", "import an external var"},
 		{"x", "set / change expiry"},
 		{"t", "set / edit note"},
+		{"u", "set / edit renew URL"},
+		{"o", "open renew page"},
 		{"y", "copy KEY=value to clipboard"},
 	}},
 	{"View", [][2]string{
@@ -428,6 +437,11 @@ func (u *ui) writeFooter(sb *strings.Builder) {
 	items := []struct{ key, label string }{
 		{"↑↓", "navigate"}, {"←→", "section"}, {"n", "new"}, {"e", "edit"},
 		{"?", "help"}, {"q", "quit"},
+	}
+	if u.selectedRenewURL() != "" {
+		// keep [?] help and [q] quit last
+		n := len(items) - 2
+		items = append(items[:n], append([]struct{ key, label string }{{"o", "renew"}}, items[n:]...)...)
 	}
 	const indent = "  "
 	const gap = 2 // visible width of the "  " separator between items
@@ -623,6 +637,9 @@ func (u *ui) renderGlobalRows() []string {
 			if r.note != "" {
 				line += "  " + magenta("["+r.note+"]")
 			}
+			if r.renewURL != "" {
+				line += "  " + cyan("↗")
+			}
 		}
 		if r.hidden {
 			line = dim(line + "  (hidden)")
@@ -656,6 +673,9 @@ func (u *ui) renderLocalRows() []string {
 		)
 		if r.note != "" {
 			line += "  " + magenta("["+r.note+"]")
+		}
+		if r.renewURL != "" {
+			line += "  " + cyan("↗")
 		}
 		if r.hidden {
 			line = dim(line + "  (hidden)")
@@ -755,7 +775,7 @@ func (u *ui) cmdEdit() {
 			return
 		}
 		existing := gs[r.key]
-		gs[r.key] = store.GlobalEntry{Value: value, UpdatedAt: time.Now().UTC(), ExpiresAt: existing.ExpiresAt, Note: existing.Note}
+		gs[r.key] = store.GlobalEntry{Value: value, UpdatedAt: time.Now().UTC(), ExpiresAt: existing.ExpiresAt, Note: existing.Note, RenewURL: existing.RenewURL}
 		if err := store.SaveGlobal(gs); err != nil {
 			u.msg = red("error: " + err.Error())
 			return
@@ -1052,6 +1072,139 @@ func (u *ui) cmdNote() {
 	u.msg = "updated note"
 }
 
+// cmdRenewURL sets or clears the renew URL on the selected global or local
+// var. Mirrors cmdNote: an external global is imported first so it becomes
+// managed, PATH has no renew URL. An invalid URL is rejected without saving.
+func (u *ui) cmdRenewURL() {
+	switch u.section {
+	case 0:
+		if u.cursor >= len(u.globals) {
+			return
+		}
+		r := u.globals[u.cursor]
+		if r.external {
+			u.cmdImport()
+			for i, g := range u.globals {
+				if g.key == r.key {
+					u.cursor = i
+					r = g
+					break
+				}
+			}
+		}
+
+		rawURL, ok := u.promptRenewURL(r.renewURL)
+		if !ok {
+			return
+		}
+
+		gs, err := store.LoadGlobal()
+		if err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+		entry := gs[r.key]
+		entry.RenewURL = rawURL
+		entry.UpdatedAt = time.Now().UTC()
+		gs[r.key] = entry
+		if err := store.SaveGlobal(gs); err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+
+	case 1:
+		if u.cursor >= len(u.locals) {
+			return
+		}
+		r := u.locals[u.cursor]
+
+		rawURL, ok := u.promptRenewURL(r.renewURL)
+		if !ok {
+			return
+		}
+
+		meta, err := store.LoadLocalMeta(u.dir)
+		if err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+		m := meta[r.key]
+		m.RenewURL = rawURL
+		m.UpdatedAt = time.Now().UTC()
+		meta[r.key] = m
+		if err := store.SaveLocalMeta(u.dir, meta); err != nil {
+			u.msg = red("error: " + err.Error())
+			return
+		}
+
+	case 2:
+		u.msg = dim("renew URL not applicable to PATH")
+		return
+	}
+
+	_ = u.reload()
+	u.msg = "updated renew URL"
+}
+
+// promptRenewURL asks for a renew URL (blank clears), showing the current one
+// dimmed above the prompt since promptLine can't prefill. On cancel or an
+// invalid URL it sets u.msg and reports false so the caller saves nothing.
+func (u *ui) promptRenewURL(current string) (string, bool) {
+	clearScreen()
+	label := cyan("Renew URL (blank to clear):") + dim("  (Esc cancels)") + " "
+	if current != "" {
+		label = dim("Current: "+current) + "\r\n" + label
+	}
+	input, ok := u.promptLine(label)
+	if !ok {
+		u.msg = dim("cancelled")
+		return "", false
+	}
+	input = strings.TrimSpace(input)
+	if input != "" {
+		if err := store.ValidateRenewURL(input); err != nil {
+			u.msg = red("error: " + err.Error())
+			return "", false
+		}
+	}
+	return input, true
+}
+
+// cmdOpenRenew opens the selected var's renew URL in the browser.
+func (u *ui) cmdOpenRenew() {
+	renewURL := u.selectedRenewURL()
+	if renewURL == "" {
+		u.msg = dim("no renew URL — press [u] to set one")
+		return
+	}
+	// Stored values can be hand-edited; never hand an unvalidated string to the OS opener.
+	if err := store.ValidateRenewURL(renewURL); err != nil {
+		u.msg = red("error: " + err.Error())
+		return
+	}
+	if err := platform.Get().OpenURL(renewURL); err != nil {
+		u.msg = red("error: " + err.Error())
+		return
+	}
+	u.msg = "opened renew page — press [e] to paste the new value"
+}
+
+// selectedRenewURL returns the renew URL of the selected global/local row, or
+// "" when none is set (or the cursor is on PATH / nothing).
+func (u *ui) selectedRenewURL() string {
+	switch u.section {
+	case 0:
+		if u.cursor < len(u.globals) {
+			return u.globals[u.cursor].renewURL
+		}
+	case 1:
+		if u.cursor < len(u.locals) {
+			return u.locals[u.cursor].renewURL
+		}
+	}
+	return ""
+}
+
 // cmdCopy copies the selected entry to the OS clipboard: KEY=VALUE (using the
 // row's real, unmasked value) for GLOBAL/LOCAL, or the raw entry for PATH.
 func (u *ui) cmdCopy() {
@@ -1249,7 +1402,7 @@ func (u *ui) reload() error {
 	managed := make(map[string]bool, len(gs))
 	for k, e := range gs {
 		managed[k] = true
-		allGlobals = append(allGlobals, varRow{key: k, value: e.Value, expiresAt: e.ExpiresAt, note: e.Note, hidden: cfg.IsHiddenGlobal(k)})
+		allGlobals = append(allGlobals, varRow{key: k, value: e.Value, expiresAt: e.ExpiresAt, note: e.Note, renewURL: e.RenewURL, hidden: cfg.IsHiddenGlobal(k)})
 	}
 	sortRows(allGlobals)
 
@@ -1279,6 +1432,7 @@ func (u *ui) reload() error {
 		if m, ok := meta[k]; ok {
 			r.expiresAt = m.ExpiresAt
 			r.note = m.Note
+			r.renewURL = m.RenewURL
 		}
 		allLocals = append(allLocals, r)
 	}

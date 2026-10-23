@@ -37,4 +37,8 @@ type Platform interface {
 
 	// Copy copies text to the OS clipboard.
 	Copy(text string) error
+
+	// OpenURL opens url in the default browser without waiting for it.
+	// Callers must validate url first (see store.ValidateRenewURL).
+	OpenURL(url string) error
 }

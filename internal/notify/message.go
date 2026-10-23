@@ -15,3 +15,12 @@ func ExpiryMessage(key string, days int) string {
 		return fmt.Sprintf("%s expires in %d days", key, days)
 	}
 }
+
+// RenewHint returns the suffix pointing at `nvy renew` for platforms whose
+// notifications can't carry a clickable link; empty when no renew URL is set.
+func RenewHint(key, renewURL string) string {
+	if renewURL == "" {
+		return ""
+	}
+	return " — run: nvy renew " + key
+}
