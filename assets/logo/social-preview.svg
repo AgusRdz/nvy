@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="nvy — environment variables that expire and remind you">
+  <rect width="1280" height="640" fill="#0F1411"/>
+  <svg x="360" y="150" width="560" height="224" viewBox="0 0 480 192">
+    <rect x="8" y="8" width="96" height="96" rx="24" fill="none" stroke="#F6F7F4" stroke-width="12"/>
+    <rect x="52" y="52" width="100" height="100" rx="26" fill="#1DB86A"/>
+    <rect x="76" y="86" width="52" height="11" rx="5.5" fill="#0F1411"/>
+    <rect x="76" y="107" width="52" height="11" rx="5.5" fill="#0F1411"/>
+    <g fill="none" stroke="#F6F7F4" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M201 141 V69 M201 101 Q201 69 235 69 Q269 69 269 101 V141"/>
+      <path d="M300 69 L334 141 L368 69"/>
+      <path d="M398 69 L432 141 M466 69 L414 179"/>
+    </g>
+  </svg>
+  <text x="640" y="462" text-anchor="middle" font-family="Inter, sans-serif" font-size="40" font-weight="600" fill="#F6F7F4">Environment variables that expire and remind you</text>
+  <text x="640" y="522" text-anchor="middle" font-family="Inter, sans-serif" font-size="28" font-weight="500" fill="#1DB86A">offline · cross-platform · no cloud · no account</text>
+</svg>

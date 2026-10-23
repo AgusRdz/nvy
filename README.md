@@ -1,7 +1,7 @@
 <h1 align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/nvy-logo-dark.svg">
-    <img alt="nvy" src="assets/logo/nvy-logo.svg" width="300">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/nvy-logo-dark.svg?v=1792781886">
+    <img alt="nvy" src="assets/logo/nvy-logo.svg?v=1792781886" width="300">
   </picture>
 </h1>
 
