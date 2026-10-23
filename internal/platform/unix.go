@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"unicode/utf16"
 )
 
 type unixPlatform struct{}
@@ -374,8 +373,6 @@ func (p *unixPlatform) Copy(text string) error {
 	case runtime.GOOS == "darwin":
 		cmd = exec.Command("pbcopy")
 	case isWSL() && wslClip() != "":
-		// clip.exe reads stdin in the OEM code page unless it starts with a
-		// UTF-16LE BOM, so send UTF-16 to keep non-ASCII values intact.
 		cmd = exec.Command(wslClip())
 		cmd.Stdin = bytes.NewReader(utf16LEWithBOM(text))
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -461,15 +458,4 @@ func wslClip() string {
 		return fixed
 	}
 	return ""
-}
-
-// utf16LEWithBOM encodes s as UTF-16LE prefixed with a byte-order mark.
-func utf16LEWithBOM(s string) []byte {
-	units := utf16.Encode([]rune(s))
-	b := make([]byte, 2, 2+2*len(units))
-	b[0], b[1] = 0xFF, 0xFE
-	for _, u := range units {
-		b = append(b, byte(u), byte(u>>8))
-	}
-	return b
 }

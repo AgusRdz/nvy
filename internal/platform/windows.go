@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -321,10 +322,11 @@ func (p *windowsPlatform) RemoveBackgroundTask() error {
 	return nil
 }
 
-// Copy copies text to the Windows clipboard via clip.exe.
+// Copy copies text to the Windows clipboard via clip.exe, sent as UTF-16 so
+// non-ASCII values survive.
 func (p *windowsPlatform) Copy(text string) error {
 	cmd := exec.Command("clip.exe")
-	cmd.Stdin = strings.NewReader(text)
+	cmd.Stdin = bytes.NewReader(utf16LEWithBOM(text))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("nvy: clip.exe: %w — %s", err, string(out))
 	}
