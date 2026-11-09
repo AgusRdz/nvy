@@ -392,7 +392,7 @@ var helpGroups = []struct {
 		{"y", "copy KEY=value to clipboard"},
 	}},
 	{"View", [][2]string{
-		{"h", "hide selected entry"},
+		{"h", "hide / unhide selected entry"},
 		{"H", "show hidden entries (toggle)"},
 		{"c", "settings"},
 	}},
@@ -1518,25 +1518,30 @@ func (u *ui) cmdToggleHidden() {
 		return
 	}
 
+	var name string
+	var nowHidden bool
 	switch u.section {
 	case 0:
 		if u.cursor >= len(u.globals) {
 			return
 		}
-		r := u.globals[u.cursor]
-		cfg.SetHiddenGlobal(r.key, !cfg.IsHiddenGlobal(r.key))
+		name = u.globals[u.cursor].key
+		nowHidden = !cfg.IsHiddenGlobal(name)
+		cfg.SetHiddenGlobal(name, nowHidden)
 	case 1:
 		if u.cursor >= len(u.locals) {
 			return
 		}
-		r := u.locals[u.cursor]
-		cfg.SetHiddenLocal(r.key, !cfg.IsHiddenLocal(r.key))
+		name = u.locals[u.cursor].key
+		nowHidden = !cfg.IsHiddenLocal(name)
+		cfg.SetHiddenLocal(name, nowHidden)
 	case 2:
 		if u.cursor >= len(u.path) {
 			return
 		}
-		entry := u.path[u.cursor]
-		cfg.SetHiddenPath(entry, !cfg.IsHiddenPath(entry))
+		name = u.path[u.cursor]
+		nowHidden = !cfg.IsHiddenPath(name)
+		cfg.SetHiddenPath(name, nowHidden)
 	}
 
 	if err := store.SaveConfig(cfg); err != nil {
@@ -1546,7 +1551,14 @@ func (u *ui) cmdToggleHidden() {
 
 	_ = u.reload()
 	u.clampCursor()
-	u.msg = ""
+	switch {
+	case !nowHidden:
+		u.msg = dim("unhidden " + name)
+	case u.showHidden:
+		u.msg = dim("hid " + name + " — [h] again to unhide")
+	default:
+		u.msg = dim("hid " + name + " — [H] to show hidden, then [h] on it to unhide")
+	}
 }
 
 func (u *ui) restore() {
