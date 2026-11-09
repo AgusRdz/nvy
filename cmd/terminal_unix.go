@@ -2,5 +2,5 @@
 
 package cmd
 
-func enableVT()      {}
-func enableVTInput() {}
+func enableVT() func() { return func() {} }
+func enableVTInput()   {}

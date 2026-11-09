@@ -15,7 +15,7 @@ var uiCmd = &cobra.Command{
 }
 
 func runUI(_ *cobra.Command, _ []string) error {
-	enableVT()
+	defer enableVT()()
 	if err := tui.Run(); err != nil {
 		return fmt.Errorf("nvy: %w", err)
 	}
